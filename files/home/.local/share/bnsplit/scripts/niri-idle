@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+# -w holds logind's delay inhibitor until before-sleep finishes. External
+# suspend is still subject to logind's InhibitDelayMaxSec (usually 5 seconds);
+# only niri-lock --suspend can refuse suspend when lock acquisition fails.
+exec swayidle -w \
+    timeout 450 'brightnessctl -s set 1%' resume 'brightnessctl -r' \
+    timeout 600 '"$HOME/.local/share/bnsplit/scripts/niri-lock"' \
+    timeout 750 'niri msg action power-off-monitors' resume 'niri msg action power-on-monitors' \
+    timeout 900 '"$HOME/.local/share/bnsplit/scripts/niri-lock" --suspend' \
+    before-sleep '"$HOME/.local/share/bnsplit/scripts/niri-lock"' \
+    after-resume 'niri msg action power-on-monitors' \
+    lock '"$HOME/.local/share/bnsplit/scripts/niri-lock"'

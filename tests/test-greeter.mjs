@@ -37,7 +37,7 @@ function session() {
     for (const name of ['login', 'onAuthMessage', 'onAuthFailure', 'onError', 'onReadyToLaunch']) {
         vm.runInContext(handler(name), context);
     }
-    const login = (password = 'secret') => context.login('demo', password, 'start-hyprland', 'wayland', 'hyprland', ['Hyprland']);
+    const login = (password = 'secret') => context.login('demo', password, 'niri-session', 'wayland', 'niri', ['niri']);
     return { context, root, Greetd, calls, login };
 }
 
@@ -46,7 +46,7 @@ function session() {
     login();
     login('duplicate');
     assert.deepEqual(calls, [['create', 'demo']]);
-    assert.deepEqual([...root._pendingSessionCmd], ['/bin/sh', '-c', 'start-hyprland']);
+    assert.deepEqual([...root._pendingSessionCmd], ['/bin/sh', '-c', 'niri-session']);
     context.onAuthMessage('Password:', false, true, false);
     assert.deepEqual(calls.at(-1), ['respond', 'secret']);
     assert.equal(root._pendingPassword, '');
@@ -56,9 +56,9 @@ function session() {
     login('123456');
     assert.deepEqual(calls.at(-1), ['respond', '123456']);
     context.onReadyToLaunch();
-    assert.deepEqual(calls.at(-1), ['launch', ['/bin/sh', '-c', 'start-hyprland'], [
-        'XDG_SESSION_TYPE=wayland', 'XDG_SESSION_DESKTOP=hyprland',
-        'DESKTOP_SESSION=hyprland', 'XDG_CURRENT_DESKTOP=Hyprland',
+    assert.deepEqual(calls.at(-1), ['launch', ['/bin/sh', '-c', 'niri-session'], [
+        'XDG_SESSION_TYPE=wayland', 'XDG_SESSION_DESKTOP=niri',
+        'DESKTOP_SESSION=niri', 'XDG_CURRENT_DESKTOP=niri',
     ]]);
     assert.equal(root.awaitingResponse, false);
 }

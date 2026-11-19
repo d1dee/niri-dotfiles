@@ -3,16 +3,15 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import qs
+import qs.services
+import "../lib/AppUtils.js" as AppUtils
 
 Singleton {
     id: root
 
     property var flattenedToplevels: []
     property int selectedIndex: 0
-    property int totalScreencopyViews: 0
-    property int loadedScreencopyViews: 0
 
     readonly property bool isVisible: GlobalStates.showAltTabSwitcher
 
@@ -43,31 +42,19 @@ Singleton {
     }
 
     function updateToplevels() {
-        let filtered = Hyprland.toplevels.values.filter(t => t.title !== "" && t.monitor !== null && t.initialClass !== "quickshell" && t.initialClass !== "");
-
-        // Helper to normalize hex addresses
-        const norm = addr => {
-            if (typeof addr === "number")
-                return addr.toString(16).toLowerCase();
-            if (typeof addr === "string")
-                return addr.toLowerCase().replace(/^0x/, "");
-            return "";
-        };
-
-        // 1. Move active toplevel to index 0
-        let active = Hyprland.activeToplevel;
+        let filtered = NiriService.windows.filter(t => AppUtils.normalizeAppId(t.app_id) !== "quickshell");
+        let active = NiriService.focusedWindow;
         if (active) {
-            let index = filtered.findIndex(t => norm(t.address) === norm(active.address));
+            let index = filtered.findIndex(t => t.id === active.id);
             if (index !== -1) {
                 let t = filtered.splice(index, 1)[0];
                 filtered.unshift(t);
             }
         }
 
-        // 2. Move last focused toplevel to index 1
-        let lastAddr = norm(GlobalCache.lastFocusedWindowAddress);
-        if (lastAddr !== "" && filtered.length > 1) {
-            let lastIndex = filtered.findIndex(t => norm(t.address) === lastAddr);
+        const previousId = NiriService.previousFocusedWindowId;
+        if (previousId !== null && filtered.length > 1) {
+            let lastIndex = filtered.findIndex(t => t.id === previousId);
             // Only move it if it's not already at index 1 or 0
             if (lastIndex > 1) {
                 let t = filtered.splice(lastIndex, 1)[0];
@@ -76,8 +63,27 @@ Singleton {
         }
 
         flattenedToplevels = filtered;
-        totalScreencopyViews = filtered.length;
-        loadedScreencopyViews = 0;
+    }
+
+    // Keep selection stable across title updates, closes and new windows while open.
+    function syncWindows() {
+        const selectedId = flattenedToplevels[selectedIndex]?.id;
+        const windows = NiriService.windows.filter(t => AppUtils.normalizeAppId(t.app_id) !== "quickshell");
+        const ordered = flattenedToplevels.map(t => windows.find(w => w.id === t.id)).filter(Boolean);
+        const ids = new Set(ordered.map(t => t.id));
+        flattenedToplevels = ordered.concat(windows.filter(t => !ids.has(t.id)));
+        const index = flattenedToplevels.findIndex(t => t.id === selectedId);
+        selectedIndex = index >= 0 ? index : Math.max(0, Math.min(selectedIndex, flattenedToplevels.length - 1));
+        if (flattenedToplevels.length === 0)
+            close();
+    }
+
+    Connections {
+        target: NiriService
+        function onWindowsChanged() {
+            if (root.isVisible)
+                root.syncWindows();
+        }
     }
 
     function switchNext() {
@@ -85,7 +91,7 @@ Singleton {
             updateToplevels();
             if (flattenedToplevels.length === 0)
                 return;
-            selectedIndex = 1;
+            selectedIndex = flattenedToplevels.length > 1 ? 1 : 0;
             GlobalStates.showAltTabSwitcher = true;
         } else {
             if (flattenedToplevels.length === 0)
@@ -112,7 +118,7 @@ Singleton {
         if (GlobalStates.showAltTabSwitcher) {
             let toplevel = flattenedToplevels[selectedIndex];
             if (toplevel) {
-                Hyprland.dispatch(`hl.dsp.focus({ window = "address:0x${toplevel.address}" })`);
+                NiriService.focusWindow(toplevel.id);
             }
         }
         close();
@@ -125,14 +131,9 @@ Singleton {
 
     function close() {
         GlobalStates.showAltTabSwitcher = false;
-        Hyprland.dispatch('hl.dsp.submap("reset")');
-    }
-
-    function incrementLoadedViews() {
-        loadedScreencopyViews++;
     }
 
     function getToplevelFlatIndex(toplevel) {
-        return flattenedToplevels.indexOf(toplevel);
+        return flattenedToplevels.findIndex(t => t.id === toplevel.id);
     }
 }

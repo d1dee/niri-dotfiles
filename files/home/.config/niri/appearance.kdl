@@ -1,0 +1,12 @@
+// Managed by the shell appearance settings.
+layout {
+    gaps 8
+}
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+    opacity 1.0
+    shadow {
+        on
+    }
+}

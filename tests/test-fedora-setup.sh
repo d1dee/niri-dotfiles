@@ -15,12 +15,18 @@ trap 'command rm -rf -- "$sandbox"' EXIT
 passes=0
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { passes=$((passes + 1)); printf 'PASS: %s\n' "$*"; }
-contains() { command grep -Fq -- "$2" "$1" || fail "$1 lacks $2"; }
+contains() {
+  if ! command grep -Fq -- "$2" "$1"; then
+    while IFS= read -r line; do printf '%s\n' "$line" >&2; done < "$1"
+    fail "$1 lacks $2"
+  fi
+}
 equal() { [[ $1 == "$2" ]] || fail "expected [$2], got [$1]"; }
 
 fixture() {
   case_dir=$sandbox/$1
   command mkdir -p "$case_dir/repo/files/home/.config/quickshell/"{store,greeter,assets} \
+    "$case_dir/repo/files/home/.config/niri" \
     "$case_dir/repo/files/root/etc/"{greetd,tmpfiles.d,pam.d} \
     "$case_dir/repo/files/home/.local/share/fonts/MaterialSymbols" \
     "$case_dir/home/.config/quickshell/store" "$case_dir/root/usr/local/bin" \
@@ -28,6 +34,8 @@ fixture() {
   command cp -- "$repo/setup" "$case_dir/repo/setup"
   command cp -- "$repo/files/home/.config/quickshell/greeter/greeter.sh" \
     "$case_dir/repo/files/home/.config/quickshell/greeter/greeter.sh"
+  printf '// desktop fixture\n' > "$case_dir/repo/files/home/.config/niri/config.kdl"
+  printf '// greeter fixture\n' > "$case_dir/repo/files/home/.config/quickshell/greeter/niri.kdl"
   command cp -- "$repo/files/root/etc/greetd/config.toml" "$case_dir/repo/files/root/etc/greetd/"
   command cp -- "$repo/files/root/etc/tmpfiles.d/bn-greetd.conf" "$case_dir/repo/files/root/etc/tmpfiles.d/"
   command cp -- "$repo/files/root/etc/pam.d/bnsplit-lock" "$case_dir/repo/files/root/etc/pam.d/"
@@ -60,7 +68,7 @@ run_setup() (
   export PATH=$case_dir/bin LC_ALL=C TERM=
   local_root=$case_dir/root
   actions=$case_dir/actions
-  missing=${1:-}
+  test_scenario=${1:-}
   shift
   deny() { printf 'UNSAFE MOCK CALL: %s\n' "$*" >&2; exit 97; }
   log() { printf '%q ' "$@" >> "$actions"; printf '\n' >> "$actions"; }
@@ -84,14 +92,27 @@ run_setup() (
     [[ $# -gt 5 && $1 == -q && $2 == repoquery && $3 == --available && $4 == --queryformat && $5 == '%{name}\n' ]] || deny "dnf5 $*"
     shift 5
     local pkg
-    for pkg; do [[ $pkg == "$missing" ]] || printf '%s\n' "$pkg"; done
+    for pkg; do [[ $pkg == "$test_scenario" ]] || printf '%s\n' "$pkg"; done
   }
   rpm() { [[ $# == 2 && $1 == -q ]] || deny "rpm $*"; return 1; }
   getent() { [[ $* == 'passwd greetd' ]] || deny "getent $*"; log getent "$@"; printf 'greetd:x:999:999::/var/lib/greetd:/sbin/nologin\n'; }
   fc-match() { [[ $* == '-f %{family} Material Symbols Sharp' ]] || deny "fc-match $*"; printf 'Material Symbols Sharp'; }
   ldd() { [[ $# == 1 ]] || deny "ldd $*"; safe_path "$1"; printf 'all dependencies found\n'; }
   fc-cache() { [[ $* == -f ]] || deny "fc-cache $*"; log fc-cache "$@"; }
-  start-hyprland() { deny 'real compositor'; }
+   niri() {
+     case "$*" in
+       --version) if [[ $test_scenario == old-niri ]]; then printf 'niri 25.11\n'; else printf 'niri 26.04\n'; fi;;
+       'validate --config '*)
+         [[ $# == 3 ]] || deny "niri $*"
+         safe_path "$3"
+         [[ -f $3 ]] || deny 'missing config'
+         log niri "$@"
+         if [[ $test_scenario == invalid-config ]]; then printf 'invalid KDL\n' >&2; return 1; fi
+         ;;
+       *) deny 'real compositor';;
+     esac
+   }
+   niri-session() { deny 'real compositor session'; }
   qs() { deny 'real quickshell'; }
   awww() { deny 'real wallpaper service'; }
   awww-daemon() { deny 'real wallpaper daemon'; }
@@ -140,7 +161,7 @@ run_setup() (
       'chown root:root /usr/local/bin/bnsplit-greeter /etc/pam.d/bnsplit-lock'|\
       'chmod 0755 /usr/local/bin/bnsplit-greeter'|'chmod 0644 /etc/pam.d/bnsplit-lock'|\
       'systemd-tmpfiles --create /etc/tmpfiles.d/bn-greetd.conf'|\
-      'restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma /usr/local/bin/bnsplit-greeter /usr/local/share/bnsplit-greeter /usr/local/share/fonts/Outfit /usr/local/share/fonts/MaterialSymbols /var/lib/greetd /etc/greetd /etc/tmpfiles.d/bn-greetd.conf /etc/pam.d/bnsplit-lock'|\
+       'restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma /usr/local/bin/bnsplit-greeter /usr/local/share/bnsplit-greeter /usr/local/share/fonts/Outfit /usr/local/share/fonts/MaterialSymbols /usr/local/share/xdg-desktop-portal/portals/bnsplit.portal /var/lib/greetd /etc/greetd /etc/tmpfiles.d/bn-greetd.conf /etc/pam.d/bnsplit-lock'|\
       'fc-cache -f /usr/local/share/fonts') return 0;;
       'chown -R -- 1000:1000 '*) [[ $# == 5 && $5 == "$HOME/.local/share/bnsplit-backup/"* ]] || deny "sudo $*"; safe_path "$5";;
       'systemctl disable sddm.service'|'systemctl enable --force greetd.service'|'systemctl set-default graphical.target')
@@ -195,6 +216,18 @@ contains "$case_dir/actions" 'sudo dnf5 makecache --refresh'
 equal "$(< "$case_dir/root/usr/local/bin/bnclip")" previous-root-binary
 pass 'missing required package exits before transaction, staging or deployment'
 
+fixture old-niri old
+run_expect 1 old-niri --skip-libretranslate
+contains "$case_dir/output" 'niri 26.04 or newer is required'
+[[ ! -e $case_dir/root/usr/local/share/bnsplit-greeter ]] || fail 'unsupported niri version deployed configuration'
+pass 'unsupported niri version exits before configuration deployment'
+
+fixture invalid-config old
+run_expect 1 invalid-config --skip-libretranslate
+contains "$case_dir/output" 'invalid KDL'
+[[ ! -e $case_dir/root/usr/local/share/bnsplit-greeter ]] || fail 'invalid niri configuration was deployed'
+pass 'failed niri validation exits before configuration deployment'
+
 for probe in service root-rsync outside-write traversal; do
   fixture "guard-$probe" new
   case $probe in
@@ -238,6 +271,7 @@ for layout in old new; do
   contains "$case_dir/actions" 'sudo chmod 0644 /etc/pam.d/bnsplit-lock'
   contains "$case_dir/actions" 'sudo systemd-tmpfiles --create /etc/tmpfiles.d/bn-greetd.conf'
   contains "$case_dir/actions" 'sudo restorecon -RF'
+  contains "$case_dir/actions" 'niri validate --config'
   contains "$case_dir/actions" 'sudo systemctl disable sddm.service'
   contains "$case_dir/actions" 'sudo systemctl enable --force greetd.service'
   contains "$case_dir/actions" 'sudo systemctl set-default graphical.target'
@@ -264,11 +298,11 @@ command sh -n "$repo/files/home/.config/quickshell/greeter/greeter.sh"
   builtin source "$repo/files/home/.config/quickshell/greeter/greeter.sh"
 )
 mapfile -t argv < "$sandbox/wrapper-argv"
-equal "${#argv[@]}" 6
-equal "${argv[*]}" 'dbus-run-session -- start-hyprland -- --config /usr/local/share/bnsplit-greeter/greeter/hyprland.lua'
+equal "${#argv[@]}" 5
+equal "${argv[*]}" 'dbus-run-session -- niri --config /usr/local/share/bnsplit-greeter/greeter/niri.kdl'
 pass 'wrapper invokes private dbus-run-session with exact compositor argv'
 mapfile -t environment < "$sandbox/wrapper-env"
-equal "${environment[*]}" '/usr/local/bin:/usr/bin:/bin /var/lib/greetd /var/lib/greetd/.config /var/lib/greetd/.cache 1 wayland Hyprland Hyprland 1 wayland wayland'
+equal "${environment[*]}" '/usr/local/bin:/usr/bin:/bin /var/lib/greetd /var/lib/greetd/.config /var/lib/greetd/.cache 1 wayland niri niri 1 wayland wayland'
 pass 'wrapper replaces personal paths and exports greeter/Wayland environment'
 
 printf '\n%d regression groups passed; no real sudo, package transaction, service mutation, deployment or lock executed.\n' "$passes"

@@ -1,290 +1,133 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -uo pipefail
+umask 077
+
 RECORD_DIR="$HOME/Videos/Record"
-mkdir -p "$RECORD_DIR"
-
-get_latest() { find "$RECORD_DIR" -name "*.mkv" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-; }
-is_recording() { pidof gpu-screen-recorder >/dev/null; }
-
-get_focused_monitor() {
-  hyprctl monitors -j | jq -r '.[] | select(.focused == true) | .name'
-}
-
-is_valid_monitor() {
-  local monitor="$1"
-  [[ -z "$monitor" ]] && return 1
-  hyprctl monitors -j | jq -r '.[].name' | grep -qx "$monitor"
-}
+runtime="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}/bnsplit-recording"
+mkdir -p -- "$runtime"
+notify_enabled=false
+shell_enabled=false
+audio=default_output
+command=${1:-help}
+shift || true
+for arg in "$@"; do
+  case "$arg" in
+    notif) notify_enabled=true ;;
+    quickshell) shell_enabled=true ;;
+    mic) audio='default_output|default_input' ;;
+    *)
+      printf '%s\n' 'Explicit monitor/region recording is unsupported through the portal. Use start without a target, select a screen/window in the GNOME chooser, or use OBS with a crop filter.' >&2
+      notify-send 'Recording unsupported' 'Use the portal screen/window chooser; region capture requires OBS with a crop filter.'
+      exit 2 ;;
+  esac
+done
 
 notify() {
-  local summary="$1" body="$2" file_path="$3"
-
-  # If there's a file path, show actions
-  if [[ -n "$file_path" ]] && [[ -f "$file_path" ]]; then
-    (
-      action=$(notify-send \
-        --app-name="Screen Recording" \
-        --icon="replay-record" \
-        --expire-time=0 \
-        --hint=string:body-markup:true \
-        --action="open=Play Video" \
-        --action="folder=Open Folder" \
-        --action="convert=Convert to MP4" \
-        "$summary" \
-        "$body")
-
-      case "$action" in
-      open)
-        xdg-open "$file_path"
-        ;;
-      convert)
-        if [[ "$file_path" == *.mkv ]]; then
-          mp4_path="${file_path%.mkv}.mp4"
-          (
-            if ffmpeg -i "$file_path" \
-              -c:v copy \
-              -c:a aac \
-              -b:a 160k \
-              -movflags +faststart \
-              "$mp4_path"; then
-              conv_action=$(notify-send \
-                --app-name="Screen Recording" \
-                --icon="replay-record" \
-                --expire-time=0 \
-                --hint=string:body-markup:true \
-                --action="open=Play MP4" \
-                --action="folder=Open Folder" \
-                --action="delete=Delete Original MKV" \
-                "Conversion Complete" \
-                "Saved to <b>$mp4_path</b>")
-
-              case "$conv_action" in
-              open)
-                xdg-open "$mp4_path"
-                ;;
-              folder)
-                xdg-open "$RECORD_DIR"
-                ;;
-              delete)
-                rm -f "$file_path"
-                notify-send \
-                  --app-name="Screen Recording" \
-                  --icon="replay-record" \
-                  --expire-time=2000 \
-                  "Original Deleted" \
-                  "$(basename "$file_path")"
-                ;;
-              esac
-            else
-              notify-send \
-                --app-name="Screen Recording" \
-                --icon="replay-record" \
-                --expire-time=0 \
-                --hint=string:body-markup:true \
-                "Conversion Failed" \
-                "Could not convert <b>$(basename "$file_path")</b>"
-            fi
-          ) &
-        fi
-        ;;
-      folder)
-        xdg-open "$RECORD_DIR"
-        ;;
-      esac
-    ) &
-  else
-    # Simple notification without actions
-    notify-send \
-      --app-name="Screen Recording" \
-      --icon="replay-record" \
-      --expire-time=2000 \
-      --hint=string:body-markup:true \
-      "$summary" \
-      "$body" &
+  printf '%s: %s\n' "$1" "$2"
+  if "$notify_enabled"; then
+    notify-send --app-name='Screen Recording' --icon=replay-record "$1" "$2"
   fi
+}
+
+update_shell() {
+  if "$shell_enabled"; then
+    qs ipc call data set isRecording "$1" >/dev/null 2>&1 || true
+    if [[ "$1" == false ]]; then
+      qs ipc call data set recordingRegion null >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+# Compare Linux process start times as well as PIDs, so stale state cannot signal a reused PID.
+start_time() {
+  local stat fields
+  IFS= read -r stat 2>/dev/null < "/proc/$1/stat" || return 1
+  read -ra fields <<< "${stat##*) }"
+  printf '%s' "${fields[19]}"
+}
+
+is_running() {
+  local saved
+  [[ -r "$runtime/process" ]] || return 1
+  read -r recorder saved < "$runtime/process" || return 1
+  [[ "$recorder" =~ ^[0-9]+$ && -n "$saved" && "$(start_time "$recorder")" == "$saved" ]]
+}
+
+latest() {
+  local file newest=''
+  shopt -s nullglob
+  for file in "$RECORD_DIR"/*.mkv; do
+    [[ -z "$newest" || "$file" -nt "$newest" ]] && newest="$file"
+  done
+  printf '%s' "$newest"
 }
 
 start_recording() {
-  is_recording && {
-    echo "Recording is already active"
-    return 1
-  }
-
-  [[ " $* " =~ " quickshell " ]] && sleep 0.1 && { update_quickshell "started" & }
-
-  local monitor=$(get_focused_monitor)
-  local filepath="$RECORD_DIR/Video_$(date +"%Y-%m-%d_%H-%M-%S").mkv"
-  local capture_target="$monitor"
-  local region_arg=""
-  local region_desc=""
-  local specified_monitor=""
-  local has_region=false
-
-  # Check arguments for monitor name, region, or other modifiers
-  for arg in "$@"; do
-    # Skip known modifiers
-    if [[ "$arg" == "quickshell" ]] || [[ "$arg" == "notif" ]] || [[ "$arg" == "mic" ]]; then
-      continue
-    fi
-
-    # Check if it's a region argument (format: WxH+X+Y)
-    if [[ "$arg" =~ ^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$ ]]; then
-      has_region=true
-
-      # If a monitor was specified, calculate absolute coordinates
-      if [[ -n "$specified_monitor" ]]; then
-        # Get monitor position from hyprctl
-        local monitor_info=$(hyprctl monitors -j | jq -r ".[] | select(.name == \"$specified_monitor\") | .x, .y")
-        local monitor_x=$(echo "$monitor_info" | head -1)
-        local monitor_y=$(echo "$monitor_info" | tail -1)
-
-        # Parse region coordinates
-        local width=$(echo "$arg" | cut -d'x' -f1)
-        local rest=$(echo "$arg" | cut -d'x' -f2)
-        local height=$(echo "$rest" | cut -d'+' -f1)
-        local region_x=$(echo "$rest" | cut -d'+' -f2)
-        local region_y=$(echo "$rest" | cut -d'+' -f3)
-
-        # Calculate absolute coordinates
-        local abs_x=$((monitor_x + region_x))
-        local abs_y=$((monitor_y + region_y))
-
-        region_arg="-region ${width}x${height}+${abs_x}+${abs_y}"
-        region_desc=" (monitor: $specified_monitor, region: $arg → absolute: ${width}x${height}+${abs_x}+${abs_y})"
-      else
-        region_arg="-region $arg"
-        region_desc=" (region: $arg)"
-      fi
-
-      # When we have a region, we must use '-w region'
-      capture_target="region"
-      continue
-    fi
-
-    # Check if it's a valid monitor name
-    if is_valid_monitor "$arg"; then
-      specified_monitor="$arg"
-      # Only use the monitor as capture target if we don't have a region
-      if [[ "$has_region" == false ]]; then
-        capture_target="$arg"
-        region_desc=" (monitor: $specified_monitor)"
-      fi
-      continue
-    fi
-  done
-
-  # Build the command
-  local audio_arg
-  if [[ " $* " =~ " mic " ]]; then
-    audio_arg="-a default_output|default_input"
-    echo "Recording started with microphone on $capture_target$region_desc: $(basename "$filepath")"
-    [[ " $* " =~ " notif " ]] && notify "Recording Started (mic)" "Saving to <b>$filepath</b>"
-  else
-    audio_arg="-a default_output"
-    echo "Recording started on $capture_target$region_desc: $(basename "$filepath")"
-    [[ " $* " =~ " notif " ]] && notify "Recording Started" "Saving to <b>$filepath</b>"
+  exec 9>"$runtime/lock"
+  flock -n 9 || { notify 'Recording busy' 'A recording or portal selection is already pending.'; return 1; }
+  local help
+  help=$(gpu-screen-recorder --help 2>&1) || true
+  if [[ "$help" != *portal* || "$help" != *-write-first-frame-ts* ]]; then
+    notify 'Recording unavailable' 'Install a gpu-screen-recorder version supporting -w portal and -write-first-frame-ts, plus PipeWire and xdg-desktop-portal-gnome. OBS PipeWire capture is an alternative.'
+    return 2
   fi
-
-  # Execute the recording command
-  gpu-screen-recorder -w "$capture_target" $region_arg -q ultra -cr full -fm cfr -k h264 -ac aac -f 60 -c mkv $audio_arg -o "$filepath" &
+  mkdir -p -- "$RECORD_DIR"
+  local filepath="$RECORD_DIR/Video_$(date +%Y-%m-%d_%H-%M-%S_%N).mkv"
+  local recorder='' started=false status=0
+  rm -f -- "$runtime/active" "$runtime/stop-requested"
+  update_shell false
+  gpu-screen-recorder -w portal -restore-portal-session no -write-first-frame-ts yes -q ultra -k h264 -ac aac -f 60 -c mkv -a "$audio" -o "$filepath" >"$runtime/recorder.log" 2>&1 9>&- &
+  recorder=$!
+  printf '%s %s\n' "$recorder" "$(start_time "$recorder")" > "$runtime/process"
+  trap 'kill -INT "$recorder" 2>/dev/null || true' TERM INT
+  while kill -0 "$recorder" 2>/dev/null; do
+    # This marker is written only after the first captured frame, not while consent is pending.
+    if ! "$started" && [[ -s "$filepath.ts" ]]; then
+      started=true
+      : > "$runtime/active"
+      update_shell true
+      notify 'Recording started' "Saving portal selection to $filepath"
+    fi
+    sleep 0.2
+  done
+  wait "$recorder" || status=$?
+  [[ -s "$filepath.ts" ]] && started=true
+  local stopped=false
+  [[ -e "$runtime/stop-requested" ]] && stopped=true
+  trap - TERM INT
+  update_shell false
+  rm -f -- "$runtime/process" "$runtime/active" "$filepath.ts"
+  flock -u 9
+  if "$started" && [[ "$status" == 0 ]]; then
+    notify 'Recording saved' "$filepath"
+  elif "$stopped" && ! "$started"; then
+    notify 'Recording cancelled' 'Portal selection was stopped before capture began.'
+  else
+    notify 'Recording ended without success' "Portal consent was cancelled or capture/encoding failed. Check $runtime/recorder.log; verify GNOME portal, PipeWire, and hardware encoder support."
+    [[ "$status" == 0 ]] && status=1
+  fi
+  return "$status"
 }
 
 stop_recording() {
-  [[ " $* " =~ " quickshell " ]] && sleep 0.1 && { update_quickshell "stopped" & }
-  is_recording || {
-    echo "No recording is currently active"
-    return 1
-  }
-  pkill -SIGINT -f gpu-screen-recorder
-  echo "Recording stopped"
-  if [[ " $* " =~ " notif " ]]; then
-    local latest_file=$(get_latest)
-    [[ -n "$latest_file" ]] && notify "Recording Stopped" "Saved to <b>$latest_file</b>" "$latest_file" || notify "Recording Stopped" "Saved to <b>$RECORD_DIR</b>"
-  fi
+  is_running || { update_shell false; notify 'Not recording' 'No managed recording is active.'; return 1; }
+  : > "$runtime/stop-requested"
+  kill -INT "$recorder"
 }
 
-toggle_recording() { is_recording && stop_recording "$@" || start_recording "$@"; }
-
-update_quickshell() {
-  local state="$1" # "started" or "stopped"
-
-  if [[ "$state" == "stopped" ]]; then
-    qs ipc call data set "isRecording" false &
-  else
-    qs ipc call data set "isRecording" true &
-  fi
-}
-
-case "$1" in
-start) start_recording "$@" ;;
-stop) stop_recording "$@" ;;
-toggle) toggle_recording "$@" ;;
-status | notif)
-  if is_recording; then
-    echo "Currently recording"
-    [[ " $* " =~ " notif " ]] || [[ "$1" == "notif" ]] && notify "Recording Active" "Saving to <b>$RECORD_DIR</b>"
-  else
-    echo "Not currently recording"
-    if [[ " $* " =~ " notif " ]] || [[ "$1" == "notif" ]]; then
-      latest_file=$(get_latest)
-      [[ -n "$latest_file" ]] && notify "Not Recording" "Last: <b>$latest_file</b>" "$latest_file" || notify "Not Recording" "No recordings in <b>$RECORD_DIR</b>"
-    fi
-  fi
-  ;;
-open)
-  latest_file=$(get_latest)
-  [[ -n "$latest_file" ]] && {
-    xdg-open "$latest_file"
-    echo "Opened: $("$latest_file")"
-  } || {
-    xdg-open "$RECORD_DIR"
-    echo "Opened recordings folder"
-  }
-  ;;
-folder)
-  xdg-open "$RECORD_DIR"
-  echo "Opened recordings folder: $RECORD_DIR"
-  ;;
-*)
-  cat <<'EOF'
-Usage: $0 [start|stop|toggle|status|open|folder|quickshell] [modifiers...] [monitor|region]
-
-Commands:
-  start      - Start screen recording (focused monitor by default)
-  stop       - Stop screen recording
-  toggle     - Toggle recording on/off
-  status     - Show current recording status
-  open       - Open latest recording or recordings folder
-  folder     - Open recordings folder
-
-Modifiers:
-  notif      - Send notifications (can be combined with other commands)
-  quickshell - Update QuickShell config (can be combined with other commands)
-  mic        - Include microphone input in recording (can be combined with other commands)
-
-Monitor/Region:
-  MONITOR    - Specify monitor name (e.g., HDMI-A-1, DP-1, eDP-1)
-               To list available monitors: hyprctl monitors
-  WxH+X+Y    - Record specific region (e.g., 1920x1080+0+0)
-               Can be obtained from tools like slurp or slop
-               Format: width x height + X offset + Y offset
-               Can be combined with monitor name to record region on specific monitor
-
-Examples:
-  $0 start notif                         - Start recording focused monitor with notification
-  $0 start HDMI-A-1                      - Start recording specific monitor
-  $0 start HDMI-A-1 1920x1080+0+0        - Start recording region on specific monitor
-  $0 start HDMI-A-1 1920x1080+0+0 mic    - Start recording region on monitor with mic
-  $0 start DP-1 mic notif                - Start recording DP-1 with microphone and notification
-  $0 start mic                           - Start recording with microphone
-  $0 start mic notif                     - Start recording with microphone and notification
-  $0 start 1920x1080+0+0                 - Start recording specific region on focused monitor
-  $0 start 1920x1080+0+0 mic notif       - Start recording region with mic and notification
-  $0 start $(slurp -f "%wx%h+%x+%y")     - Start recording region selected with slurp
-  $0 toggle quickshell                   - Toggle recording and update QuickShell
-  $0 stop notif quickshell               - Stop recording with notification and update QuickShell
-  $0 status notif                        - Check status with notification
-  $0 open                                - Open latest recording
-EOF
-  exit 1
-  ;;
+case "$command" in
+  start) start_recording ;;
+  stop) stop_recording ;;
+  toggle) if is_running; then stop_recording; else start_recording; fi ;;
+  status|notif)
+    [[ "$command" == notif ]] && notify_enabled=true
+    if is_running; then
+      if [[ -e "$runtime/active" ]]; then notify 'Recording active' "$RECORD_DIR"; else notify 'Recording pending' 'Waiting for portal consent or first frame.'; fi
+    else
+      update_shell false
+      notify 'Not recording' "$RECORD_DIR"
+    fi ;;
+  open) file=$(latest); xdg-open "${file:-$RECORD_DIR}" ;;
+  folder) xdg-open "$RECORD_DIR" ;;
+  *) printf '%s\n' 'Usage: screen_record.sh {start|stop|toggle|status|notif|open|folder} [quickshell] [notif] [mic]' 'Screen/window selection is provided by the GNOME PipeWire portal. Explicit monitor and region targets are unsupported.'; exit 2 ;;
 esac

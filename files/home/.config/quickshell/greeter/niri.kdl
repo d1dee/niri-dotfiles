@@ -1,0 +1,33 @@
+// Greetd.launch exits qs only after acknowledgement. NIRI_SOCKET inherited by
+// this child addresses this greeter compositor, never the user's desktop.
+spawn-at-startup "sh" "-c" "qs -p /usr/local/share/bnsplit-greeter/Greeter.qml; niri msg action quit --skip-confirmation"
+
+hotkey-overlay {
+    skip-at-startup
+}
+prefer-no-csd
+animations {
+    off
+}
+cursor {
+    xcursor-theme "Bibata-Modern-Ice"
+    xcursor-size 24
+}
+input {
+    keyboard {
+        xkb {
+            layout "us"
+            variant "altgr-intl"
+            options "caps:escape"
+        }
+        repeat-delay 250
+        repeat-rate 50
+    }
+    touchpad {
+        natural-scroll
+    }
+}
+binds {
+    XF86MonBrightnessUp { spawn "brightnessctl" "s" "5%+"; }
+    XF86MonBrightnessDown { spawn "brightnessctl" "s" "5%-"; }
+}

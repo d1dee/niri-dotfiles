@@ -34,19 +34,11 @@ ControlCenterPage {
             RowLayout {
                 spacing: 12
 
-                StyledIconButton {
-                    iconName: "tune"
-                    onClicked: {
-                        Quickshell.execDetached(["sh", "-c", "xdg-open $HOME/.config/hypr/hyprsunset.conf"]);
-                        GlobalStates.expandedBarModule = "";
-                    }
-                }
-
                 StyledText {
-                    text: "Hyprsunset"
+                    text: "Night Light"
                     font.pixelSize: Theme.fontPixelSizes.small
                     font.weight: Font.Medium
-                    opacity: BrightnessService.hyprsunsetEnabled ? 1.0 : 0.4
+                    opacity: BrightnessService.nightLightEnabled ? 1.0 : 0.4
 
                     Behavior on opacity {
                         NumberAnimation {
@@ -58,8 +50,8 @@ ControlCenterPage {
                 StyledSwitch {
                     implicitWidth: 64
                     implicitHeight: 28
-                    checked: BrightnessService.hyprsunsetEnabled
-                    onClicked: BrightnessService.toggleHyprsunset()
+                    checked: BrightnessService.nightLightEnabled
+                    onClicked: BrightnessService.toggleNightLight()
                 }
             }
         }

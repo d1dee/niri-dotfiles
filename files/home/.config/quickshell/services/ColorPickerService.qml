@@ -14,21 +14,33 @@ Singleton {
     signal colorPicked(var colorEntry)
 
     function pick(format = "hex", delay = 0.2) {
-        root._currentFormat = format;
-        pickerProcess.exec(["sh", "-c", `sleep ${delay} && hyprpicker --format=${format}`]);
+        if (pickerProcess.running || pickerDelay.running)
+            return;
+        root._currentFormat = format === "rgb" ? "rgb" : "hex";
+        pickerDelay.interval = Math.max(0, Number(delay) * 1000 || 0);
+        pickerDelay.start();
+    }
+
+    Timer {
+        id: pickerDelay
+        onTriggered: pickerProcess.exec(["niri", "msg", "--json", "pick-color"])
     }
 
     Process {
         id: pickerProcess
         stdout: StdioCollector {
             onStreamFinished: {
-                const rawOutput = text.trim();
-                if (!rawOutput)
+                let picked;
+                try {
+                    picked = JSON.parse(text);
+                } catch (_) {
                     return;
-
-                const extracted = root._extractColor(rawOutput, root._currentFormat);
-                if (!extracted)
+                }
+                // A cancelled native picker returns null.
+                if (!Array.isArray(picked?.rgb) || picked.rgb.length !== 3 || !picked.rgb.every(c => Number.isFinite(c) && c >= 0 && c <= 1))
                     return;
+                const rgb = picked.rgb.map(c => Math.round(c * 255));
+                const extracted = root._currentFormat === "rgb" ? rgb.join(", ") : "#" + rgb.map(c => c.toString(16).padStart(2, "0")).join("");
                 copyProcess.exec(["wl-copy", extracted]);
 
                 const magickColor = root._getMagickColor(extracted, root._currentFormat);
@@ -55,6 +67,10 @@ Singleton {
                 root.colorPicked(colorEntry);
             }
         }
+        onExited: (code, status) => {
+            if (code !== 0)
+                notifyProcess.exec(["notify-send", "Color Picker failed", "Native niri color picking is unavailable. Check niri version and session logs."]);
+        }
     }
 
     Process {
@@ -74,21 +90,10 @@ Singleton {
         id: notifyProcess
     }
 
-    function _extractColor(output, format) {
-        if (format === "hex") {
-            const match = output.match(/#[0-9A-Fa-f]{6}/);
-            return match ? match[0] : null;
-        } else if (format === "rgb") {
-            const match = output.match(/[0-9]+ [0-9]+ [0-9]+/);
-            return match ? match[0].replace(/ /g, ", ") : null;
-        }
-        return null;
-    }
-
     function _toHex(extracted, format) {
         if (format === "hex")
             return extracted;
-        // _extractColor yields "r, g, b" for rgb; raw triplets are not valid QML colors.
+        // Raw RGB triplets are not valid QML colors.
         const m = (extracted || "").match(/(\d+),\s*(\d+),\s*(\d+)/);
         if (!m)
             return "";

@@ -89,27 +89,6 @@ function formatPlayerTime(seconds) {
 }
 
 /**
- * Parse Hyprland modmask to modifier string
- * @param {number} modmask
- * @returns {string}
- */
-function parseHyprlandModMask(modmask, separator= " ") {
-  const mods = [];
-
-  // Hyprland modmask bits
-  if (modmask & 64)  mods.push('SUPER');
-  if (modmask & 1)   mods.push('SHIFT');
-  if (modmask & 4)   mods.push('CONTROL');
-  if (modmask & 8)   mods.push('ALT');
-  if (modmask & 2)   mods.push('CAPS');
-  if (modmask & 16)  mods.push('MOD2');
-  if (modmask & 32)  mods.push('MOD3');
-  if (modmask & 128) mods.push('MOD5');
-
-  return mods.join(separator);
-}
-
-/**
  * Check if a character is an emoji
  * @param {string} char
  * @returns {boolean}

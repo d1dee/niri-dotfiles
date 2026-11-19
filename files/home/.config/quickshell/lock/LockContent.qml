@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import Quickshell
 import Quickshell.Services.UPower
 import Quickshell.Wayland
 import qs.services
@@ -14,11 +15,16 @@ WlSessionLock {
     id: root
     locked: LockService.locked
 
+    onSecureChanged: LockService.acquired = root.secure
+    Component.onDestruction: LockService.acquired = false
+
+    readonly property var inputScreen: Quickshell.screens.find(s => s.name === GlobalSettings.mainMonitor) || Quickshell.screens[0] || null
+
     surface: WlSessionLockSurface {
         id: rootSurface
-        color: "transparent"
+        color: Theme.colors.bgBase
         property bool wallpaperIsGif: GlobalData.wallpaperPath.endsWith(".gif")
-        property bool isMainMonitor: (GlobalSettings.mainMonitor === rootSurface.screen?.name) || false
+        property bool isMainMonitor: rootSurface.screen === root.inputScreen
 
         Rectangle {
             anchors.fill: parent

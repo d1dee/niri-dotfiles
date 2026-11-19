@@ -13,6 +13,7 @@ import "../../lib/AppUtils.js" as AppUtils
 
 PanelWindow {
     id: root
+    screen: Quickshell.screens.find(s => s.name === NiriService.focusedOutput) ?? Quickshell.screens[0]
 
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
@@ -51,9 +52,10 @@ PanelWindow {
     Item {
         id: container
         anchors.fill: background
-        anchors.margins: 48
-        opacity: root.show && AltTabService.totalScreencopyViews > 0 ? 1 : 0
+        anchors.margins: Math.min(48, background.width * 0.04)
+        opacity: root.show && AltTabService.flattenedToplevels.length > 0 ? 1 : 0
         focus: true
+        Component.onCompleted: forceActiveFocus()
 
         Keys.onPressed: event => {
             if (event.key === Qt.Key_Alt) {
@@ -125,17 +127,18 @@ PanelWindow {
             spacing: 48
             interactive: true
 
-            Component.onCompleted: {
+            function syncPage() {
                 setCurrentIndex(Math.floor(AltTabService.selectedIndex / AltTabService.itemsPerPage));
             }
+            Component.onCompleted: syncPage()
 
             Connections {
                 target: AltTabService
                 function onSelectedIndexChanged() {
-                    let page = Math.floor(AltTabService.selectedIndex / AltTabService.itemsPerPage);
-                    if (swipeable.currentIndex !== page) {
-                        swipeable.setCurrentIndex(page);
-                    }
+                    swipeable.syncPage();
+                }
+                function onWindowPagesChanged() {
+                    Qt.callLater(swipeable.syncPage);
                 }
             }
 
@@ -175,24 +178,11 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         clip: true
-                                        opacity: scv.hasContent ? 1 : 0
-                                        visible: opacity !== 0
-
-                                        Behavior on opacity {
-                                            enabled: false
-                                            NumberAnimation {
-                                                duration: Theme.animations.duration.slower
-                                                easing.type: Theme.animations.easing.outQuad
-                                            }
-                                        }
 
                                         StyledClippingRectangle {
                                             id: proportionalRect
 
                                             property bool isHovered: false
-                                            readonly property size windowSize: scv.sourceSize
-                                            readonly property real windowAspect: windowSize.width > 0 ? windowSize.width / windowSize.height : 1
-                                            readonly property real containerAspect: toplevelItem.width > 0 ? toplevelItem.width / toplevelItem.height : 1
 
                                             anchors.centerIn: parent
                                             border.color: toplevelItem.isSelected ? Theme.colors.white : isHovered ? Theme.colors.textMuted : Theme.colors.borderMid
@@ -200,30 +190,8 @@ PanelWindow {
                                             color: GlobalSettings.transparentize && !GlobalSettings.isPowerSaverEnabled ? ColorUtils.transparentize(Theme.colors.bgSurface, 0.6) : Theme.colors.bgSurface
                                             baseRadius: Theme.rounding.normal + 2
 
-                                            width: {
-                                                if (windowSize.width === 0 || windowSize.height === 0)
-                                                    return toplevelItem.width;
-                                                return (windowAspect > containerAspect) ? toplevelItem.width : toplevelItem.height * windowAspect;
-                                            }
-
-                                            height: {
-                                                if (windowSize.width === 0 || windowSize.height === 0)
-                                                    return toplevelItem.height;
-                                                return (windowAspect > containerAspect) ? toplevelItem.width / windowAspect : toplevelItem.height;
-                                            }
-
-                                            ScreencopyView {
-                                                id: scv
-                                                anchors.fill: parent
-                                                captureSource: toplevelItem.modelData.wayland
-                                                live: root.show && swipeable.currentIndex === windowPageItem.index
-
-                                                onHasContentChanged: {
-                                                    if (hasContent) {
-                                                        AltTabService.incrementLoadedViews();
-                                                    }
-                                                }
-                                            }
+                                            width: toplevelItem.width
+                                            height: toplevelItem.height
 
                                             MouseArea {
                                                 anchors.fill: parent
@@ -236,13 +204,13 @@ PanelWindow {
                                         }
 
                                         StyledIcon {
-                                            iconName: AppUtils.getAppIcon(toplevelItem.modelData.lastIpcObject["initialClass"], [...new Set(DesktopEntries.applications.values)])
-                                            iconSize: 24
+                                            iconName: AppUtils.getAppIcon(toplevelItem.modelData.app_id, [...new Set(DesktopEntries.applications.values)])
+                                            iconSize: Math.max(24, Math.min(64, proportionalRect.height * 0.35))
                                             useIconTheme: true
                                             placeHolder: "applications-system"
-                                            anchors.top: proportionalRect.top
-                                            anchors.left: proportionalRect.left
-                                            anchors.margins: 8
+                                            anchors.horizontalCenter: proportionalRect.horizontalCenter
+                                            anchors.verticalCenter: proportionalRect.verticalCenter
+                                            anchors.verticalCenterOffset: -titleTag.height / 2
                                         }
 
                                         StyledRectangle {
@@ -260,7 +228,7 @@ PanelWindow {
                                             StyledText {
                                                 id: titleText
                                                 anchors.centerIn: parent
-                                                text: toplevelItem.modelData.title
+                                                text: toplevelItem.modelData.title || toplevelItem.modelData.app_id || "Untitled window"
                                                 font.pixelSize: Theme.fontPixelSizes.small
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight

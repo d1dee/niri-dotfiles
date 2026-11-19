@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 
 import Quickshell
 import Quickshell.Io
-import Quickshell.Hyprland
 import QtQuick
 import qs
 
@@ -24,48 +23,37 @@ Singleton {
 
     property list<BrightnessMonitor> monitors: []
 
-    property bool hyprsunsetEnabled: GlobalSettings.hyprsunsetEnabled
-    property bool hyprsunsetRunning: false
+    readonly property bool nightLightEnabled: GlobalSettings.nightLightEnabled
     property string materialSymbol: "wb_sunny"
 
-    function toggleHyprsunset() {
-        GlobalSettings.hyprsunsetEnabled = !GlobalSettings.hyprsunsetEnabled;
+    function toggleNightLight() {
+        GlobalSettings.nightLightEnabled = !GlobalSettings.nightLightEnabled;
     }
 
-    function getMonitor(screen = Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor.name)): var {
+    function getMonitor(screen = Quickshell.screens.find(s => s.name === NiriService.focusedOutput)): var {
         return monitors.find(m => m.screen === screen);
     }
 
-    function setBrightness(value: real, screen = Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor.name)): var {
+    function setBrightness(value: real, screen = Quickshell.screens.find(s => s.name === NiriService.focusedOutput)): var {
         getMonitor(screen)?.setBrightness(value);
     }
 
-    function getBrightness(screen = Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor.name)): var {
+    function getBrightness(screen = Quickshell.screens.find(s => s.name === NiriService.focusedOutput)): var {
         return getMonitor(screen)?.brightness ?? 0;
     }
 
     function increaseBrightness(val = 0.05): void {
-        const focusedName = Hyprland.focusedMonitor.name;
+        const focusedName = NiriService.focusedOutput;
         const monitor = monitors.find(m => focusedName === m.screen.name);
         if (monitor)
             monitor.stepBrightness(val);
     }
 
     function decreaseBrightness(val = 0.05): void {
-        const focusedName = Hyprland.focusedMonitor.name;
+        const focusedName = NiriService.focusedOutput;
         const monitor = monitors.find(m => focusedName === m.screen.name);
         if (monitor)
             monitor.stepBrightness(-val);
-    }
-
-    function syncHyprsunset() {
-        if (root.hyprsunsetEnabled && !root.hyprsunsetRunning) {
-            hyprsunsetStartProc.startDetached();
-            root.hyprsunsetRunning = true;
-        } else if (!root.hyprsunsetEnabled && root.hyprsunsetRunning) {
-            hyprsunsetKillProc.running = true;
-            root.hyprsunsetRunning = false;
-        }
     }
 
     // Must run after both ddcDetectProc and backlightCheckProc have completed at least once.
@@ -89,12 +77,9 @@ Singleton {
         root.monitors = next;
     }
 
-    onHyprsunsetEnabledChanged: syncHyprsunset()
-
     reloadableId: "brightness"
 
     Component.onCompleted: {
-        checkProc.running = true;
         ddcDetectProc.running = true;
         backlightCheckProc.running = true;
     }
@@ -108,36 +93,24 @@ Singleton {
     }
 
     Process {
-        id: checkProc
-        command: ["pgrep", "-x", "hyprsunset"]
-        stdout: SplitParser {
+        id: nightLightProcess
+        // wlsunset requires high > low; both phases stay at effectively 4500 K.
+        command: ["wlsunset", "-T", "4501", "-t", "4500", "-S", "06:00", "-s", "18:00", "-d", "0"]
+        running: root.nightLightEnabled
+        stderr: SplitParser {
             onRead: data => {
-                root.hyprsunsetRunning = data.trim() !== "";
-                if (root.hyprsunsetEnabled && !root.hyprsunsetRunning) {
-                    hyprsunsetStartProc.startDetached();
-                    root.hyprsunsetRunning = true;
+                if (/gamma control .* failed|doesn't support wlr-gamma-control/.test(data) && root.nightLightEnabled) {
+                    GlobalSettings.nightLightEnabled = false;
+                    Quickshell.execDetached(["notify-send", "Night Light unavailable", "The compositor or output rejected gamma control. Check session logs and stop other night-light services."]);
                 }
             }
         }
         onExited: (code, status) => {
-            if (code !== 0) {
-                root.hyprsunsetRunning = false;
-                if (root.hyprsunsetEnabled) {
-                    hyprsunsetStartProc.startDetached();
-                    root.hyprsunsetRunning = true;
-                }
+            if (root.nightLightEnabled) {
+                GlobalSettings.nightLightEnabled = false;
+                Quickshell.execDetached(["notify-send", "Night Light unavailable", "wlsunset exited. Check compositor gamma-control support and that no other night-light service is running."]);
             }
         }
-    }
-
-    Process {
-        id: hyprsunsetStartProc
-        command: ["hyprsunset"]
-    }
-
-    Process {
-        id: hyprsunsetKillProc
-        command: ["pkill", "hyprsunset"]
     }
 
     Process {

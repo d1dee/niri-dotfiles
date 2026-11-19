@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""
+Minimal xdg-desktop-portal backend implementing org.freedesktop.impl.portal.Wallpaper
+for the bnsplit wallpaper setter.
+
+When an app (e.g. Nautilus) calls "Set as Background...", it goes through
+xdg-desktop-portal -> this service -> your wallpaper setter of choice.
+"""
+
+import subprocess
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+import os
+import dbus
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+BUS_NAME = "org.freedesktop.impl.portal.desktop.wallpaperbnsplit"
+OBJECT_PATH = "/org/freedesktop/portal/desktop"
+WALLPAPER_IFACE = "org.freedesktop.impl.portal.Wallpaper"
+REQUEST_IFACE = "org.freedesktop.impl.portal.Request"
+PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
+
+LOG_FILE = Path.home() / ".local/state/bnsplit/xdg-desktop-portal-wallpaper-bnsplit.log"
+
+
+def log(msg: str) -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_FILE.open("a") as f:
+        f.write(msg.rstrip("\n") + "\n")
+
+
+def uri_to_path(uri: str) -> str:
+    parsed = urllib.parse.urlparse(uri)
+    if parsed.scheme == "file":
+        return urllib.request.url2pathname(parsed.path)
+    return uri
+
+
+def set_wallpaper(path: str) -> bool:
+    try:
+        scripts = os.environ.get("BN_SCRIPTS", str(Path.home() / ".local/share/bnsplit/scripts"))
+        script = os.path.join(scripts, "select-wallpaper")
+        subprocess.run([script, path], check=True, env=dict(os.environ, BN_SCRIPTS=scripts))
+        return True
+    except Exception as e:
+        log(f"ERROR setting wallpaper: {e}")
+        return False
+
+
+class RequestObject(dbus.service.Object):
+    """Ephemeral object exported at the 'handle' path the caller gave us."""
+
+    def __init__(self, bus, handle):
+        super().__init__(bus, handle)
+
+    @dbus.service.signal(dbus_interface=REQUEST_IFACE, signature="ua{sv}")
+    def Response(self, response, results):
+        pass
+
+    @dbus.service.method(
+        dbus_interface=REQUEST_IFACE, in_signature="", out_signature=""
+    )
+    def Close(self):
+        pass
+
+
+class WallpaperPortal(dbus.service.Object):
+    def __init__(self, bus):
+        super().__init__(bus, OBJECT_PATH)
+        self._bus = bus
+
+    @dbus.service.method(PROPERTIES_IFACE, in_signature="ss", out_signature="v")
+    def Get(self, interface, name):
+        if interface == WALLPAPER_IFACE and name == "version":
+            return dbus.UInt32(1, variant_level=1)
+        raise dbus.exceptions.DBusException(
+            "Unknown property", name="org.freedesktop.DBus.Error.UnknownProperty"
+        )
+
+    @dbus.service.method(PROPERTIES_IFACE, in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface):
+        return {"version": dbus.UInt32(1)} if interface == WALLPAPER_IFACE else {}
+
+    @dbus.service.method(
+        dbus_interface=WALLPAPER_IFACE,
+        in_signature="osssa{sv}",
+        out_signature="u",
+    )
+    def SetWallpaperURI(self, handle, app_id, parent_window, uri, options):
+        log(
+            f"SetWallpaperURI called: app_id={app_id!r} uri={uri!r} options={dict(options)!r}"
+        )
+
+        path = uri_to_path(str(uri))
+        ok = Path(path).is_file() and set_wallpaper(path)
+        response_code = 0 if ok else 2  # 0 = success, 2 = other error
+
+        req = RequestObject(self._bus, handle)
+        req.Response(dbus.UInt32(response_code), dbus.Dictionary({}, signature="sv"))
+
+        return dbus.UInt32(response_code)
+
+
+def main():
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SessionBus()
+    name = dbus.service.BusName(BUS_NAME, bus)
+    WallpaperPortal(bus)
+    log("wallpaper portal backend started")
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

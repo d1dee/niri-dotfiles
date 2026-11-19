@@ -1,0 +1,4 @@
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.wallpaperbnsplit
+Interfaces=org.freedesktop.impl.portal.Wallpaper;
+UseIn=niri;

@@ -34,13 +34,12 @@ warn() { printf '%swarning:%s %s\n' "$c_yellow" "$c_off" "$*" >&2; }
 err() { printf '%serror:%s %s\n' "$c_red" "$c_off" "$*" >&2; }
 
 dnf_pkgs=(
-  hyprland
-  hypridle
-  hyprlock
-  hyprsunset
-  hyprpicker
-  hyprshutdown
-  uwsm
+  niri
+  xwayland-satellite
+  swayidle
+  swaylock
+  wlsunset
+  playerctl
   qt6-qt5compat
   qt6-qtmultimedia
   qt6-qtimageformats
@@ -85,7 +84,8 @@ dnf_pkgs=(
   xdg-utils
   xdg-desktop-portal
   xdg-desktop-portal-gtk
-  xdg-desktop-portal-hyprland
+  xdg-desktop-portal-gnome
+  gnome-keyring
   NetworkManager
   bluez
   upower
@@ -207,9 +207,18 @@ step "Installing ${#dnf_pkgs[@]} Fedora packages"
 sudo dnf5 install "${dnf_pkgs[@]}"
 
 step "Checking session executables"
-for cmd in start-hyprland qs awww awww-daemon dbus-run-session; do
+for cmd in niri niri-session qs awww awww-daemon dbus-run-session; do
   command -v "$cmd" >/dev/null || { err "required command missing after installation: $cmd"; exit 1; }
 done
+niri_version=$(niri --version)
+if [[ ! $niri_version =~ niri[[:space:]]+([0-9]+)\.([0-9]+) ]]; then
+  err "cannot determine niri version: $niri_version"
+  exit 1
+fi
+if ((10#${BASH_REMATCH[1]} < 26 || (10#${BASH_REMATCH[1]} == 26 && 10#${BASH_REMATCH[2]} < 4))); then
+  err "niri 26.04 or newer is required: $niri_version"
+  exit 1
+fi
 sudo systemd-sysusers /usr/lib/sysusers.d/greetd.conf
 getent passwd greetd >/dev/null || { err "Fedora greetd system account is missing"; exit 1; }
 
@@ -259,6 +268,10 @@ if [[ $HOME != "$old_home" ]]; then
 else
   info "home path already matches, no rewrite needed"
 fi
+
+step "Validating niri desktop and greeter configuration"
+niri validate --config "$tmp/home/.config/niri/config.kdl"
+niri validate --config "$tmp/home/.config/quickshell/greeter/niri.kdl"
 
 step "Staging a system-owned greeter"
 greeter_dir="$tmp/root/usr/local/share/bnsplit-greeter"
@@ -327,6 +340,7 @@ step "Restoring SELinux labels for installed system files"
 sudo restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma \
   /usr/local/bin/bnsplit-greeter /usr/local/share/bnsplit-greeter \
   /usr/local/share/fonts/Outfit /usr/local/share/fonts/MaterialSymbols \
+  /usr/local/share/xdg-desktop-portal/portals/bnsplit.portal \
   /var/lib/greetd /etc/greetd /etc/tmpfiles.d/bn-greetd.conf /etc/pam.d/bnsplit-lock
 
 step "Refreshing font cache"
@@ -362,5 +376,5 @@ else
   echo "No existing files were overwritten, so no backup was created."
 fi
 
-printf '\n%sReboot when ready%s to start the Quickshell greeter, then select Hyprland.\n' "$c_yellow" "$c_off"
+printf '\n%sReboot when ready%s to start the Quickshell greeter, then select niri.\n' "$c_yellow" "$c_off"
 info "No display manager was started or stopped in this session."

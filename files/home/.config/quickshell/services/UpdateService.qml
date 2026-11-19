@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
 import qs
 import "../lib/FileUtils.js" as FileUtils
@@ -141,13 +140,7 @@ Singleton {
     }
 
     function _launchUpdate(packages) {
-        const command = ["kitty", "--title=quickshell-system-update", "bash", FileUtils.trimFileProtocol(Paths.systemUpdateScript), ...packages]
-            .map(arg => "'" + String(arg).replace(/'/g, "'\\''") + "'").join(" ");
-        // Lua long strings preserve shell quoting without interpreting backslashes.
-        let equals = "=";
-        while (command.includes("]" + equals + "]"))
-            equals += "=";
-        Hyprland.dispatch(`hl.dsp.exec_cmd([${equals}[${command}]${equals}], { float = true, workspace = require('hyprland.lua.utils.workspaces').get_target_workspace('new', false) })`);
+        NiriService.spawn(["kitty", "--class=float", "--title=quickshell-system-update", "bash", FileUtils.trimFileProtocol(Paths.systemUpdateScript), ...packages]);
     }
 
     Component.onCompleted: {

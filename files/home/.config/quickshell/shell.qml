@@ -24,7 +24,6 @@ import qs.surfaces.capture
 import qs.surfaces.desktop
 import qs.surfaces.launcher
 import qs.surfaces.notifications
-import qs.surfaces.screensharepicker
 
 ShellRoot {
     Component.onCompleted: {
@@ -59,9 +58,8 @@ ShellRoot {
         WallpaperService;
         WallhavenService;
         MonitorService;
-        HyprlandService;
+        NiriService;
         LockService;
-        ScreenShareService;
 
         if (GlobalData.wallpaperPath === "")
             Quickshell.execDetached([Paths.selectWallpaperScript, "--path", Paths.defaultWallpaper]);
@@ -88,11 +86,6 @@ ShellRoot {
         target: GlobalIpc
         property: "capture"
         value: capture.item
-    }
-    Binding {
-        target: GlobalIpc
-        property: "screensharepicker"
-        value: screensharepicker.item
     }
 
     LazyLoader {
@@ -149,11 +142,6 @@ ShellRoot {
         component: ScreenCapture {}
     }
 
-    LazyLoader {
-        id: screensharepicker
-        active: GlobalCache.loadScreenSharePicker
-        component: ScreenSharePicker {}
-    }
 
     LazyLoader {
         id: altTabSwitcher

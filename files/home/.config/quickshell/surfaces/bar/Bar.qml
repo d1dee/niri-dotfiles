@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import qs
 import qs.services
 import qs.components
@@ -27,7 +26,6 @@ Scope {
         WlrLayershell.namespace: "quickshell:bar"
         WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-        HyprlandWindow.visibleMask: Region {}
 
         mask: Region {}
         color: "transparent"
@@ -45,10 +43,10 @@ Scope {
             right: true
         }
 
-        readonly property HyprlandMonitor monitor: HyprlandService.getMonitorOfScreen(screen)
         readonly property string maskTarget: GlobalStates.expandedBarModule
         readonly property Item maskItem: maskTarget === "dateTime" ? dateTimeModule : maskTarget === "background" ? background : maskTarget === "workspaces" ? workspacesModule : maskTarget === "resources" ? resourcesModule : maskTarget === "mprisPlayers" ? mprisPlayersModule : maskTarget === "weather" ? weatherModule : maskTarget === "controlCenter" ? controlCenterModule : maskTarget === "battery" ? batteryModule : null
-        readonly property bool compactBar: (GlobalSettings.forceCompactBar || (rootSurface.monitor.activeWorkspace.hasFullscreen && !HyprlandService.focusedWorkspaceHasNoWindows))
+        // Niri IPC does not expose fullscreen/maximized state for automatic compaction.
+        readonly property bool compactBar: GlobalSettings.forceCompactBar
         property bool revealHovered: false
         readonly property bool barRevealed: GlobalSettings.hideTopBar && !GlobalCache.loadLockScreen && (revealHovered || GlobalStates.expandedBarModule !== "")
         readonly property bool barHidden: GlobalSettings.hideTopBar && !GlobalCache.loadLockScreen && !barRevealed
@@ -59,7 +57,7 @@ Scope {
 
         WlrLayershell.namespace: "quickshell:bar"
         WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.keyboardFocus: (GlobalStates.expandedBarModule !== "" || PolkitService.active) && rootSurface.screen.name === (Hyprland.focusedMonitor?.name ?? "") ? WlrKeyboardFocus.Exclusive : GlobalSettings.hideTopBar ? WlrKeyboardFocus.None : WlrKeyboardFocus.OnDemand
+        WlrLayershell.keyboardFocus: (GlobalStates.expandedBarModule !== "" || PolkitService.active) && rootSurface.screen?.name === NiriService.focusedOutput ? WlrKeyboardFocus.Exclusive : GlobalSettings.hideTopBar ? WlrKeyboardFocus.None : WlrKeyboardFocus.OnDemand
 
         mask: Region {
             item: rootSurface.maskItem === null ? rootSurface.maskItem : contentRow
@@ -172,6 +170,7 @@ Scope {
 
             Workspaces {
                 id: workspacesModule
+                outputName: rootSurface.screen?.name ?? ""
                 anchors.left: parent.left
                 anchors.leftMargin: isExpanded ? contentRow.margin : 0
                 compactBar: rootSurface.compactBar

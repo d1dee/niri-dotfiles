@@ -2,56 +2,37 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
-import Quickshell.Wayland
-import Quickshell.Hyprland
 import Quickshell.Services.Pam
-import qs.services
 import qs
 
 Singleton {
     id: root
 
     property bool locked: false
+    // Updated by LockContent from compositor acknowledgement, not the request.
+    property bool acquired: false
     property bool showUI: false
     property bool hasFailed: false
     property bool isLocking: false
     property bool lockInput: false
     property bool isAuthenticating: false
-    property bool navigateBeforeLock: true
-    property int lastTotalWindows: 0
-    property var lastSpecialWorkspace: false
     property string passwordInput: ""
     onIsLockingChanged: GlobalStates.isLocking = root.isLocking
 
-    function lock(navigateBeforeLock) {
+    function lock() {
         if (locked || isLocking)
             return;
         root.isLocking = true;
         root.hasFailed = false;
         root.lockInput = false;
         root.passwordInput = "";
-        root.navigateBeforeLock = navigateBeforeLock;
-        root.lastSpecialWorkspace = HyprlandService.currentSpecialWorkspace || false;
-        Hyprland.dispatch(`hl.dsp.focus({ monitor = '${GlobalSettings.mainMonitor}' })`);
-        if (root.navigateBeforeLock) {
-            root.lastTotalWindows = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.toplevels.values.length : 0;
-            if (root.lastSpecialWorkspace !== false)
-                Hyprland.dispatch(`hl.dsp.workspace.toggle_special("${root.lastSpecialWorkspace.replace("special:", "")}")`);
-            Hyprland.dispatch("require('hyprland.lua.utils.workspaces'):go('new')");
-        }
-        shortcutInhibitor.enabled = true;
-        if (Hyprland.monitors.values.length === 1) {
-            Quickshell.execDetached(["hyprctl", "eval", "hl.config({cursor = {invisible = true} })"]);
-        } else {
-            Quickshell.execDetached(["hyprctl", "eval", "hl.config({cursor = {inactive_timeout = 1} })"]);
-        }
+        root.locked = true;
         GlobalCache.loadLockScreen = true;
-        lockTimer.start();
     }
 
     function unlock() {
         // IPC/logind unlock requests are not proof of authentication.
-        if (!locked || !showUI || pamContext.active)
+        if (!locked || !acquired || !showUI || pamContext.active)
             return;
         if (!pamContext.start())
             root.hasFailed = true;
@@ -72,31 +53,10 @@ Singleton {
         pamContext.respond(passwordInput);
     }
 
-    ShortcutInhibitor {
-        id: shortcutInhibitor
-        enabled: false
-        window: PanelWindow {
-            implicitWidth: 0
-            implicitHeight: 0
-            color: "transparent"
-            WlrLayershell.namespace: "quickshell:shortcutinhibitor"
-            WlrLayershell.keyboardFocus: shortcutInhibitor.enabled ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-            mask: Region {
-                item: null
-            }
-        }
-    }
-
-    // Delay locking slightly to let the lock screen load
-    Timer {
-        id: lockTimer
-        interval: 200
-        triggeredOnStart: false
-        onTriggered: {
-            root.locked = true;
+    onAcquiredChanged: {
+        if (acquired) {
             root.showUI = true;
             root.unlock();
-            shortcutInhibitor.enabled = false;
             root.isLocking = false;
         }
     }
@@ -108,16 +68,6 @@ Singleton {
         onTriggered: {
             root.locked = false;
             GlobalCache.loadLockScreen = false;
-            Quickshell.execDetached(["hyprctl", "eval", "hl.config({cursor = {invisible = false, inactive_timeout = 5} })"]);
-            if (root.navigateBeforeLock) {
-                if (root.lastSpecialWorkspace !== false)
-                    Hyprland.dispatch(`hl.dsp.workspace.toggle_special("${root.lastSpecialWorkspace.replace("special:", "")}")`);
-                if (root.lastTotalWindows !== 0) {
-                    Hyprland.dispatch("require('hyprland.lua.utils.workspaces'):go('back')");
-                    root.lastTotalWindows = 0;
-                }
-            }
-            root.navigateBeforeLock = true;
         }
     }
 

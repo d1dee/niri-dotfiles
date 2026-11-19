@@ -10,8 +10,8 @@ Singleton {
     id: root
 
     readonly property string materialSymbol: inhibit ? "moon_stars" : "bedtime"
-    readonly property bool inhibit: !GlobalSettings.hyprlandDPMS || _inhibit
-    readonly property bool toggleInhibitEnabled: GlobalSettings.hyprlandDPMS
+    readonly property bool inhibit: !GlobalSettings.monitorsPowered || _inhibit
+    readonly property bool toggleInhibitEnabled: GlobalSettings.monitorsPowered
     property alias _inhibit: idleInhibitor.enabled
 
     // Timed Inhibition

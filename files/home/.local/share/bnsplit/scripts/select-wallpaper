@@ -154,14 +154,14 @@ refresh_colors &
 awww img --transition-type none "$WALL"
 
 cmp -s "$WALL" "$CACHE_DIR/wallpaper" || cp "$WALL" "$CACHE_DIR/wallpaper"
-MAIN_MONITOR_NAME=$(hyprctl monitors -j | jq -r '.[] | select(.id == 0) | .name')
+MAIN_MONITOR_NAME=$(niri msg --json focused-output | jq -r '.name // empty')
 AWWW_CACHE_DIR=""
 for d in "$HOME"/.cache/awww/*/; do
   [[ -d "$d" ]] && AWWW_CACHE_DIR="$d"
 done
 
 MAIN_CACHE_FILE="$AWWW_CACHE_DIR/$MAIN_MONITOR_NAME"
-if [[ -n "$AWWW_CACHE_DIR" ]]; then
+if [[ -n "$AWWW_CACHE_DIR" && -n "$MAIN_MONITOR_NAME" && -f "$MAIN_CACHE_FILE" ]]; then
   for file in "$AWWW_CACHE_DIR"/*; do
     filename="${file##*/}"
     if [[ -f "$file" && "$filename" != _* && "$filename" != "$MAIN_MONITOR_NAME" ]]; then

@@ -20,7 +20,7 @@ Singleton {
     property bool _ready: false
 
     property string lastGreeterUser: _jsonData.lastGreeterUser || ""
-    property string lastGreeterSession: _jsonData.lastGreeterSession || ""
+    property string lastGreeterSession: _jsonData.lastGreeterSession || "niri"
     property bool blurGreeter: _jsonData.blurGreeter ?? true
 
     Component.onCompleted: {

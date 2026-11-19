@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs
 import qs.services
@@ -13,7 +12,6 @@ PanelWindow {
     id: root
     screen: Quickshell.screens.find(s => s.name === GlobalSettings.mainMonitor) ?? Quickshell.screens[0]
 
-    readonly property HyprlandMonitor monitor: HyprlandService.getMonitorOfScreen(screen)
     property alias notificationListView: notificationListView
     property int margin: 8 + 8
 
@@ -61,7 +59,8 @@ PanelWindow {
 
         header: Item {
             width: notificationListView.width
-            height: ((GlobalStates.showBar && GlobalSettings.loadBar && !GlobalSettings.hideTopBar && !(root.monitor.activeWorkspace.hasFullscreen && !Hyprland.activeToplevel?.wayland?.maximized)) ? Theme.sizes.barHeight : 0) + root.margin
+            // Match the ordinary bar layout; Niri IPC has no fullscreen metadata.
+            height: ((GlobalStates.showBar && GlobalSettings.loadBar && !GlobalSettings.hideTopBar) ? Theme.sizes.barHeight : 0) + root.margin
 
             Behavior on height {
                 NumberAnimation {

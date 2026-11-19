@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import qs.greeter
 import qs
 
@@ -22,7 +21,8 @@ Variants {
 
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "quickshell:greeter"
-        WlrLayershell.keyboardFocus: (!Hyprland.focusedMonitor || screen.name === Hyprland.focusedMonitor.name) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+        // The first connected screen remains usable after output hot-unplug.
+        WlrLayershell.keyboardFocus: screen === Quickshell.screens[0] ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         GreeterContent {}
     }

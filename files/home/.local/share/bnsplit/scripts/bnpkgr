@@ -24,8 +24,6 @@ FZF_OPTS=(
 
 # If floating mode, relaunch in kitty window
 if [[ "$1" == "--float" ]]; then
-  hyprctl dispatch 'require("hyprland.lua.utils.workspaces"):go("new")'
-  sleep 0.1
   kitty -o initial_window_width=122c -o initial_window_height=32c -o single_window_padding_width=0 --class float --title package-uninstall bash "$0"
   exit 0
 fi
@@ -69,7 +67,7 @@ fi
 
 # Refocus the kitty window
 sleep 1
-hyprctl eval 'require("hyprland.lua.utils.windows"):focus("package-uninstall")' >/dev/null 2>&1
+qs ipc call niri focusApp package-uninstall >/dev/null 2>&1
 
 echo -en "\n${YELLOW}Press any key to exit...${NC}"
 read -n 1 -s -r

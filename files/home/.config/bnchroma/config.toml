@@ -69,11 +69,6 @@ command = [
 # command = "plasma-apply-colorscheme BnCustom"
 
 [[templates]]
-name = "hypr"
-template = "~/.config/bnchroma/templates/hypr.conf"
-output = "~/.config/hypr/colors.conf"
-
-[[templates]]
 name = "cava"
 template = "~/.config/bnchroma/templates/cava"
 output = "~/.config/cava/config"

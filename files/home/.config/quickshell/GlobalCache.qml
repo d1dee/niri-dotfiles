@@ -15,11 +15,9 @@ Singleton {
 
     // Cache props session-scoped
     property string inhibitorState: ""
-    property string lastFocusedWindowAddress: ""
     property bool lowBatteryNotified: false
     property bool wasInhibitActive: false
     property bool loadLockScreen: false
-    property bool loadScreenSharePicker: false
     property var notificationTimestamps: ({})
     property var unreadNotificationsIds: []
     property var pickedColors: []

@@ -16,13 +16,9 @@ Singleton {
     readonly property string local: home + "/.local"
     readonly property string cache: home + "/.cache"
 
-    readonly property string hypr: config + "/hypr"
-    readonly property string hlDir: hypr + "/hyprland"
-    readonly property string hlRulesJson: hlDir + "/json/rules.json"
-    readonly property string hlMonitorsJson: hlDir + "/json/monitors.json"
-    readonly property string hlDecorationJson: hlDir + "/json/decoration.json"
-    readonly property string hlGeneralJson: hlDir + "/json/general.json"
-    readonly property string hlPowerSaverJson: hlDir + "/json/powersaver.json"
+    readonly property string niri: config + "/niri"
+    readonly property string niriOutputs: niri + "/outputs.kdl"
+    readonly property string niriAppearance: niri + "/appearance.kdl"
 
     readonly property string state: local + "/state/bnsplit"
 
@@ -55,7 +51,6 @@ Singleton {
 
     readonly property string scripts: Quickshell.shellDir + "/scripts"
     readonly property string screenRecordScript: scripts + "/screen_record.sh"
-    readonly property string rectDetectorScript: scripts + "/rect_detector.py"
     readonly property string mprisPlayersProcessorScript: scripts + "/mpris_players_processor.sh"
     readonly property string weatherFetcherScript: scripts + "/weather_fetcher.sh"
     readonly property string calendarFetcherScript: scripts + "/calendar_fetcher.py"

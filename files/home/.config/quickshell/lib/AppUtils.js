@@ -18,6 +18,10 @@ function getAppIcon(query, apps, alternatives = []) {
     for (const q of [query, ...alternatives]) {
         if (!q || invalidPattern.test(q)) continue;
 
+        const normalized = normalizeAppId(q);
+        const exact = apps.find(app => normalizeAppId(app.id) === normalized || normalizeAppId(app.startupClass) === normalized);
+        if (exact?.icon) return exact.icon;
+
         const filtered = FuzzyFilter.search(q, apps, {
             threshold: 0,
             limit: 1,
@@ -33,44 +37,14 @@ function getAppIcon(query, apps, alternatives = []) {
     return query;
 }
 
-/**
- * Finds the HyprlandToplevel matching a given DesktopEntry, using multiple
- * fields in order of reliability: Wayland appId > IPC class > IPC initialClass > desktop entry id stem.
- * @param {object} app - A DesktopEntry object.
- * @param {Array} toplevels - Hyprland.toplevels.values
- * @returns {object|null} The matching HyprlandToplevel, or null if not found.
- */
-function findToplevelForApp(app, toplevels) {
-    if (!app || !toplevels) return null;
-
-    return toplevels.find(toplevel => {
-        const ipc = toplevel.lastIpcObject;
-
-        if (toplevel.wayland?.appId) {
-            const appId = toplevel.wayland.appId.toLowerCase();
-            if (app.startupClass && appId === app.startupClass.toLowerCase()) return true;
-            if (app.id && appId === app.id.replace(/\.desktop$/, "").toLowerCase()) return true;
-        }
-
-        if (app.startupClass) {
-            const sc = app.startupClass.toLowerCase();
-            if (ipc.class?.toLowerCase() === sc) return true;
-            if (ipc.initialClass?.toLowerCase() === sc) return true;
-        }
-
-        if (app.id) {
-            const idStem = app.id.replace(/\.desktop$/, "").toLowerCase();
-            if (ipc.class?.toLowerCase() === idStem) return true;
-            if (ipc.initialClass?.toLowerCase() === idStem) return true;
-        }
-
-        return false;
-    }) ?? null;
+function normalizeAppId(query) {
+    return String(query ?? "").trim().replace(/\.desktop$/i, "").toLowerCase();
 }
 
-/**
- * Returns true if at least one running toplevel matches the given DesktopEntry.
- * @param {object} app - A DesktopEntry object.
- * @param {Array} toplevels - Hyprland.toplevels.values
- * @returns {boolean}
- */
+// Prefer the focused window when an application owns several windows.
+function findWindowForApp(app, windows) {
+    if (!app || !windows) return null;
+    const ids = [normalizeAppId(app.startupClass), normalizeAppId(app.id)].filter(Boolean);
+    const matches = windows.filter(window => ids.includes(normalizeAppId(window.app_id)));
+    return matches.find(window => window.is_focused) ?? matches[0] ?? null;
+}

@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 import qs
 import qs.services
 import "../store/LauncherData.js" as LauncherData
@@ -71,7 +70,7 @@ Singleton {
         return entry;
     }
 
-    function _buildAppEntry(app, address, isOpen, override) {
+    function _buildAppEntry(app, windowId, isOpen, override) {
         const openNewWindow = () => {
             if (override && override.primaryAction) {
                 Quickshell.execDetached(["sh", "-c", override.primaryAction]);
@@ -98,8 +97,8 @@ Singleton {
             enabled: true,
             primaryAction: () => {
                 GlobalStates.showLauncher = false;
-                if (address !== "") {
-                    Hyprland.dispatch(`hl.dsp.focus({ window = "address:0x${address}" })`);
+                if (windowId !== null) {
+                    NiriService.focusWindow(windowId);
                 } else if (override && override.primaryAction) {
                     Quickshell.execDetached(["sh", "-c", override.primaryAction]);
                     incrementScore(app.id, "application");
@@ -125,21 +124,21 @@ Singleton {
     readonly property var apps: {
         const seen = {};
         const list = [...new Set(DesktopEntries.applications.values)].map(app => {
-            const toplevel = AppUtils.findToplevelForApp(app, Hyprland.toplevels.values);
-            const address = toplevel?.address ?? "";
-            const isOpen = toplevel !== null;
+            const window = AppUtils.findWindowForApp(app, NiriService.windows);
+            const windowId = window?.id ?? null;
+            const isOpen = window !== null;
             const override = GlobalSettings.launcherOverrides.find(o => o.id === app.id);
             const key = "app:" + app.id;
             seen[key] = true;
             return root._cachedEntry(key, {
-                address: address,
+                windowId: windowId,
                 isOpen: isOpen,
                 overridePrimary: override?.primaryAction ?? "",
                 overrideSecondary: override?.secondaryAction ?? "",
                 name: app.name,
                 description: app.comment,
                 icon: app.icon
-            }, () => root._buildAppEntry(app, address, isOpen, override));
+            }, () => root._buildAppEntry(app, windowId, isOpen, override));
         }).sort((a, b) => a.name.localeCompare(b.name));
         for (const k in root._entryCache) {
             if (k.startsWith("app:") && !seen[k])

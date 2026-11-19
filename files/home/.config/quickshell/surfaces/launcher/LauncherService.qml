@@ -148,20 +148,14 @@ Singleton {
         if (def.actionType === "toggle_blur") {
             if (isPrimary)
                 GlobalStates.showLauncher = false;
-            let decoration = HyprlandService.getDecorationJson();
-            decoration.blur.enabled = !decoration.blur.enabled;
-            HyprlandService.setDecorationJson(decoration);
-            GlobalIpc.popup.showInfo(`Blur ${decoration.blur.enabled ? "Enabled" : "Disabled"}`, "", 1500);
+            GlobalIpc.popup.showWarning("Blur Unavailable", "niri does not provide compositor blur.", 3000);
             return;
         }
 
         if (def.actionType === "toggle_window_shadows") {
             if (isPrimary)
                 GlobalStates.showLauncher = false;
-            let decoration = HyprlandService.getDecorationJson();
-            decoration.shadow.enabled = !decoration.shadow.enabled;
-            HyprlandService.setDecorationJson(decoration);
-            GlobalIpc.popup.showInfo(`Window Shadows ${decoration.shadow.enabled ? "Enabled" : "Disabled"}`, "", 1500);
+            NiriService.toggleAppearance("shadows");
             return;
         }
 
@@ -176,10 +170,7 @@ Singleton {
         if (def.actionType === "toggle_window_transparency") {
             if (isPrimary)
                 GlobalStates.showLauncher = false;
-            let rules = HyprlandService.getRulesJson();
-            rules.windowrules.xray = !rules.windowrules.xray;
-            HyprlandService.setRulesJson(rules);
-            GlobalIpc.popup.showInfo(`Window Transparency ${rules.windowrules.xray ? "Enabled" : "Disabled"}`, "", 1500);
+            NiriService.toggleAppearance("transparency");
             return;
         }
 
@@ -194,21 +185,14 @@ Singleton {
         if (def.actionType === "toggle_outer_gaps") {
             if (isPrimary)
                 GlobalStates.showLauncher = false;
-            let general = HyprlandService.getGeneralJson();
-            general.big_gaps_out = !general.big_gaps_out;
-            HyprlandService.setGeneralJson(general);
-            GlobalIpc.popup.showInfo(`Big outer gaps ${general.big_gaps_out ? "Enabled" : "Disabled"}`, "", 1500);
+            NiriService.toggleAppearance("bigGaps");
             return;
         }
 
         if (def.actionType === "toggle_rounded_corners") {
             if (isPrimary)
                 GlobalStates.showLauncher = false;
-            GlobalSettings.enableRounding = !GlobalSettings.enableRounding;
-            let decoration = HyprlandService.getDecorationJson();
-            decoration.rounded_corners = GlobalSettings.enableRounding;
-            HyprlandService.setDecorationJson(decoration);
-            GlobalIpc.popup.showInfo(`Rounded Corners ${GlobalSettings.enableRounding ? "Enabled" : "Disabled"}`, "", 1500);
+            NiriService.toggleAppearance("rounded");
             return;
         }
 

@@ -1,5 +1,8 @@
-# Hypr
-~/.config/hypr/
+# niri
+~/.config/niri/
+~/.config/xdg-desktop-portal/niri-portals.conf
+~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.wallpaperbnsplit.service
+/usr/local/share/xdg-desktop-portal/portals/bnsplit.portal
 
 # Quickshell
 ~/.config/quickshell/
@@ -18,13 +21,15 @@
 ~/.local/share/bnsplit/scripts/bnpkgr
 ~/.local/share/bnsplit/scripts/launch-geoclue
 ~/.local/share/bnsplit/scripts/qs-nothp
+~/.local/share/bnsplit/scripts/niri-idle
+~/.local/share/bnsplit/scripts/niri-lock
+~/.local/share/bnsplit/scripts/xdg-desktop-portal-wallpaper-bnsplit
 ~/.local/share/bnsplit/scripts/recolor-adwaita
 ~/.local/share/bnsplit/scripts/select-wallpaper
 ~/.local/share/bnsplit/scripts/tmux-main
 ~/.local/share/bnsplit/scripts/todoist
 ~/.local/share/bnsplit/scripts/upscale-wallpaper
 ~/.local/share/bnsplit/scripts/wallwatch
-~/.local/share/bnsplit/scripts/xdg-desktop-portal-wallpaper-hypr
 
 # Apps
 ~/.config/bnchroma/

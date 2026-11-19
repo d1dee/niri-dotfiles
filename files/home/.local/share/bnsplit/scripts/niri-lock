@@ -1,0 +1,28 @@
+#!/bin/bash
+set -eu
+
+case "${1-}" in
+    --wait-quickshell)
+        qs ipc call lock lock true >/dev/null 2>&1 || exit 1
+        # A successful void lock call only means the request was delivered.
+        until acquired=$(qs ipc call lock acquired 2>/dev/null) && [[ $acquired == true ]]; do
+            sleep 0.05
+        done
+        exit 0
+        ;;
+    ''|--suspend) ;;
+    *) printf 'Usage: niri-lock [--suspend]\n' >&2; exit 2 ;;
+esac
+
+# Each acquisition attempt is bounded. swaylock -f returns only after locking;
+# a running process or a delivered IPC request alone is not proof of coverage.
+if ! timeout 2s bash "$0" --wait-quickshell; then
+    if ! timeout 2s swaylock --daemonize --color 111111; then
+        printf 'niri-lock: could not confirm session lock acquisition\n' >&2
+        exit 1
+    fi
+fi
+
+if [[ ${1-} == --suspend ]]; then
+    exec systemctl suspend
+fi

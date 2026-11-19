@@ -11,8 +11,8 @@ export BNSPLIT_GREETER=1
 
 # Session
 export XDG_SESSION_TYPE=wayland
-export XDG_SESSION_DESKTOP=Hyprland
-export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_DESKTOP=niri
+export XDG_CURRENT_DESKTOP=niri
 
 # Wayland stuff
 export MOZ_ENABLE_WAYLAND=1
@@ -21,4 +21,4 @@ export SDL_VIDEODRIVER=wayland
 
 # pam_systemd supplies the greeter runtime directory. A private session bus
 # prevents the greeter from sharing desktop services with a logged-in user.
-exec dbus-run-session -- start-hyprland -- --config /usr/local/share/bnsplit-greeter/greeter/hyprland.lua
+exec dbus-run-session -- niri --config /usr/local/share/bnsplit-greeter/greeter/niri.kdl

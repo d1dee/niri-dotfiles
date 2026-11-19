@@ -36,8 +36,8 @@ Singleton {
     property bool hideTopBar: _jsonData.hideTopBar ?? false
     property bool forceCompactBar: _jsonData.forceCompactBar ?? false
     property bool doNotDisturb: _jsonData.doNotDisturb ?? false
-    property bool hyprsunsetEnabled: _jsonData.hyprsunsetEnabled ?? false
-    property bool hyprlandDPMS: _jsonData.hyprlandDPMS ?? true
+    property bool nightLightEnabled: _jsonData.nightLightEnabled ?? _jsonData.hyprsunsetEnabled ?? false
+    property bool monitorsPowered: _jsonData.monitorsPowered ?? _jsonData.hyprlandDPMS ?? true
     property bool enableShadow: _jsonData.enableShadow ?? true
     property bool enableRounding: _jsonData.enableRounding ?? true
     property bool transparentize: _jsonData.transparentize ?? true

@@ -100,9 +100,8 @@ BasePage {
     }
 
     function applyChanges() {
+        if (MonitorService.busy || MonitorService.showConfirmPopup) return;
         MonitorService.setMonitors(root.localMonitors, root.dirtyMonitorNames);
-        root.isDirty = false;
-        root.dirtyMonitorNames = [];
     }
 
     function updateStack() {
@@ -136,6 +135,9 @@ BasePage {
             else
                 root.needsUpdate = true;
         }
+        function onShowConfirmPopupChanged() {
+            if (!MonitorService.showConfirmPopup) root.syncFromService();
+        }
     }
 
     // Layout
@@ -160,6 +162,11 @@ BasePage {
             property real scaleFactor: 1
 
             function updateLayout() {
+                if (!root.localMonitors.length) {
+                    layoutMinX = layoutMinY = layoutWidth = layoutHeight = 0;
+                    scaleFactor = 1;
+                    return;
+                }
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 root.localMonitors.forEach(m => {
                     const d = root.monitorDims(m);
@@ -254,7 +261,6 @@ BasePage {
                         readonly property var dims: root.monitorDims(modelData)
                         readonly property bool isSelected: root.selectedIndex === index
                         readonly property bool isDisabled: modelData.disabled ?? false
-                        readonly property bool isMirrored: !!modelData.mirrorOf && !modelData.mirrorOf.includes("none")
                         readonly property bool isDragged: dragArea.drag.active
                         readonly property bool isMain: root.isMainMonitor(modelData)
 
@@ -282,30 +288,6 @@ BasePage {
                             font.pixelSize: Theme.fontPixelSizes.smaller
                             font.weight: Font.Bold
                             opacity: monitorRect.isDisabled ? 0.6 : 1.0
-                        }
-
-                        RowLayout {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            anchors.margins: 4
-                            visible: monitorRect.isMirrored
-
-                            MaterialSymbol {
-                                iconName: "content_copy"
-                                iconSize: 24
-                                color: Theme.colors.textPrimary
-                            }
-
-                            StyledText {
-                                text: {
-                                    const id = parseInt(monitorRect.modelData.mirrorOf);
-                                    const target = root.localMonitors.find(m => m.id === id);
-                                    return target ? target.name : monitorRect.modelData.mirrorOf;
-                                }
-                                color: Theme.colors.textPrimary
-                                font.pixelSize: Theme.fontPixelSizes.smaller
-                                font.weight: Font.Medium
-                            }
                         }
 
                         MouseArea {
@@ -539,64 +521,6 @@ BasePage {
                         }
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        StyledText {
-                            text: "Mirroring"
-                            horizontalAlignment: Text.AlignLeft
-                            Layout.fillWidth: true
-                        }
-
-                        StyledSwitch {
-                            id: mirrorSwitch
-                            Layout.preferredWidth: 54
-                            Layout.preferredHeight: 26
-                            checked: {
-                                const v = settingsPage.monitor.mirrorOf;
-                                return !!v && v !== "none" && v !== "";
-                            }
-                            onCheckedChanged: {
-                                if (!checked)
-                                    root.updateMonitor(settingsPage.monitorIndex, {
-                                        mirrorOf: "none"
-                                    });
-                            }
-                        }
-                    }
-
-                    StyledComboBox {
-                        Layout.fillWidth: true
-                        visible: mirrorSwitch.checked
-                        showScrollBar: false
-                        colorBg: ColorUtils.transparentize(Theme.colors.bgSurface, 0.50)
-                        model: mirrorModel.map(m => m.text)
-
-                        property var mirrorModel: [
-                            {
-                                text: "── none ──",
-                                value: "none"
-                            },
-                            ...root.localMonitors.filter((m, i) => i !== settingsPage.monitorIndex).map(m => ({
-                                        text: m.name,
-                                        value: String(m.id)
-                                    }))]
-                        currentIndex: {
-                            const cur = settingsPage.monitor.mirrorOf ?? "none";
-                            const idx = mirrorModel.findIndex(m => m.value === cur);
-                            return idx !== -1 ? idx : 0;
-                        }
-                        onActivated: {
-                            const sel = mirrorModel[currentIndex];
-                            root.updateMonitor(settingsPage.monitorIndex, {
-                                mirrorOf: sel.value === "none" ? "none" : sel.value
-                            });
-                        }
-                        popup.onVisibleChanged: {
-                            if (!popup.visible)
-                                root.forceActiveFocus();
-                        }
-                    }
                 }
 
                 SectionDivider {
@@ -627,8 +551,8 @@ BasePage {
                             };
                         })
                         currentIndex: {
-                            const current = `${settingsPage.monitor.width}x${settingsPage.monitor.height}`;
-                            return model.findIndex(m => m.value.startsWith(current));
+                            const current = `${settingsPage.monitor.width}x${settingsPage.monitor.height}@${settingsPage.monitor.refreshRate}`;
+                            return model.findIndex(m => m.value === current);
                         }
                         onActivated: {
                             const mode = model[currentIndex].value;

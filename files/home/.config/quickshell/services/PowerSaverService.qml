@@ -10,11 +10,17 @@ import qs.services
 Singleton {
     id: root
 
+    Component.onCompleted: root.applyPowerSaverMode(GlobalSettings.forcePowerSaver || PowerProfiles.profile === PowerProfile.PowerSaver)
+
     function applyPowerSaverMode(enabled) {
         GlobalSettings.isPowerSaverEnabled = enabled;
-        let powerSaverJson = HyprlandService.getPowerSaverJson();
-        powerSaverJson.enabled = GlobalSettings.isPowerSaverEnabled;
-        HyprlandService.setPowerSaverJson(powerSaverJson);
+    }
+
+    Connections {
+        target: GlobalSettings
+        function onForcePowerSaverChanged() {
+            root.applyPowerSaverMode(GlobalSettings.forcePowerSaver || PowerProfiles.profile === PowerProfile.PowerSaver);
+        }
     }
 
     Connections {

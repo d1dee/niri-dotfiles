@@ -1,8 +1,8 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Hyprland
 import qs
+import qs.services
 import qs.components
 import "../../../lib/ColorUtils.js" as ColorUtils
 
@@ -17,8 +17,9 @@ BarModule {
     readonly property int workspaceIndicatorOuterGap: 4
     readonly property int workspaceIndicatorWidth: Theme.sizes.barModuleBaseHeight - workspaceIndicatorOuterGap
 
-    readonly property var sortedWorkspaces: Hyprland.workspaces.values.filter(ws => ws?.monitor?.id === Hyprland.focusedMonitor?.id).filter(ws => ws?.id >= 1).sort((a, b) => a?.id - b?.id)
-    readonly property int focusedIndex: sortedWorkspaces.findIndex(ws => ws.focused)
+    required property string outputName
+    readonly property var sortedWorkspaces: NiriService.workspaces.filter(ws => ws.output === outputName).sort((a, b) => a.idx - b.idx)
+    readonly property int focusedIndex: sortedWorkspaces.findIndex(ws => ws.is_active)
     readonly property int currentGroup: focusedIndex >= 0 ? Math.floor(focusedIndex / workspacesToShow) : 0
     readonly property int groupStart: currentGroup * workspacesToShow
     readonly property var currentGroupWorkspaces: sortedWorkspaces.slice(groupStart, groupStart + workspacesToShow)
@@ -48,7 +49,7 @@ BarModule {
         color: isHovered ? ColorUtils.transparentize(Theme.colors.color16, 0.10) : "transparent"
 
         StyledText {
-            text: root.groupStart + parent.index + 1
+            text: parent.isReal ? parent.modelData.idx : ""
             anchors.centerIn: parent
             opacity: parent.isReal ? 1.0 : 0.35
             font.weight: Font.DemiBold
@@ -64,7 +65,7 @@ BarModule {
             cursorShape: Qt.PointingHandCursor
             onEntered: workspaceIndicator.isHovered = true
             onExited: workspaceIndicator.isHovered = false
-            onClicked: Hyprland.dispatch(`hl.dsp.focus({ workspace = ${parent.modelData.id}  })`)
+            onClicked: NiriService.focusWorkspace(parent.modelData.id)
         }
 
         Behavior on color {
@@ -79,6 +80,7 @@ BarModule {
         id: container
         StyledRectangle {
             id: focusIndicator
+            visible: root.localFocusedIndex >= 0
             width: root.workspaceIndicatorWidth
             height: root.workspaceIndicatorWidth
             baseRadius: width / 2

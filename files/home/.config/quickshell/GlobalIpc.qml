@@ -13,11 +13,6 @@ Singleton {
     property var dialog
     property var popup
     property var capture
-    property var screensharepicker
-
-    function emitScreenshareSelection(selection: string): void {
-        screensharepickerIpc.wait(selection);
-    }
 
     IpcHandler {
         target: "settings"
@@ -87,13 +82,16 @@ Singleton {
         target: "launcher"
 
         function toggle(): void {
-            root.launcher.toggle();
+            if (!GlobalShortcuts.isLocked() && root.launcher)
+                root.launcher.toggle();
         }
         function launch(mode: string): void {
-            root.launcher.launch(mode);
+            if (!GlobalShortcuts.isLocked() && root.launcher)
+                root.launcher.launch(mode);
         }
         function execute(id: string): void {
-            root.launcher.execute(id);
+            if (!GlobalShortcuts.isLocked() && root.launcher)
+                root.launcher.execute(id);
         }
     }
 
@@ -101,15 +99,11 @@ Singleton {
         target: "bar"
 
         function toggleModule(name: string): void {
-            const modules = ["resources", "mprisPlayers", "dateTime", "weather", "controlCenter", "battery"];
-            if (!modules.includes(name))
-                return;
-            if (name !== GlobalStates.expandedBarModule)
-                GlobalStates.expandedBarModule = name;
-            else
-                GlobalStates.expandedBarModule = "";
+            GlobalShortcuts.toggleBarModule(name);
         }
         function openModule(name: string): void {
+            if (GlobalShortcuts.isLocked())
+                return;
             const modules = ["resources", "mprisPlayers", "dateTime", "weather", "controlCenter", "battery"];
             if (!modules.includes(name))
                 return;
@@ -172,27 +166,35 @@ Singleton {
         target: "screencapture"
 
         function region(): void {
-            if (root.capture)
-                root.capture.startRegionCapture(false, "");
+            if (!GlobalShortcuts.isLocked() && root.capture)
+                root.capture.startRegionCapture(false, "", "snapshot");
         }
         function regionTemp(): void {
-            if (root.capture)
-                root.capture.startRegionCapture(true, "");
+            if (!GlobalShortcuts.isLocked() && root.capture)
+                root.capture.startRegionCapture(true, "", "snapshot");
         }
         function regionCustom(path: string): void {
-            if (root.capture)
-                root.capture.startRegionCapture(false, root.capture.sanitizePath(path));
+            if (!GlobalShortcuts.isLocked() && root.capture)
+                root.capture.startRegionCapture(false, root.capture.sanitizePath(path), "snapshot");
+        }
+        function ocr(): void {
+            if (!GlobalShortcuts.isLocked() && root.capture)
+                root.capture.startRegionCapture(true, "", "ocr");
+        }
+        function lens(): void {
+            if (!GlobalShortcuts.isLocked() && root.capture)
+                root.capture.startRegionCapture(true, "", "lens");
         }
         function full(): void {
-            if (root.capture)
+            if (!GlobalShortcuts.isLocked() && root.capture)
                 root.capture.captureMonitor("");
         }
         function fullTemp(): void {
-            if (root.capture)
+            if (!GlobalShortcuts.isLocked() && root.capture)
                 root.capture.captureMonitor(`${Paths.screenshotTempDir}/${root.capture.generateFilename()}`);
         }
         function fullCustom(path: string): void {
-            if (root.capture)
+            if (!GlobalShortcuts.isLocked() && root.capture)
                 root.capture.captureMonitor(`${root.capture.sanitizePath(path)}/${root.capture.generateFilename()}`);
         }
     }
@@ -262,10 +264,17 @@ Singleton {
     }
 
     IpcHandler {
-        target: "hyprland"
+        target: "niri"
 
         function setDPMS(val: bool): void {
-            HyprlandService.setDPMS(val);
+            NiriService.setDPMS(val);
+        }
+        function toggleDPMS(): void {
+            NiriService.setDPMS(!GlobalSettings.monitorsPowered);
+        }
+        function focusApp(query: string): void {
+            if (!GlobalShortcuts.isLocked())
+                NiriService.focusApp(query);
         }
     }
 
@@ -284,6 +293,10 @@ Singleton {
             LockService.lock(navigateBeforeLock);
         }
 
+        function acquired(): bool {
+            return LockService.acquired;
+        }
+
         function unlock(): void {
             LockService.unlock();
         }
@@ -298,27 +311,19 @@ Singleton {
     }
 
     IpcHandler {
-        id: screensharepickerIpc
-        target: "screensharepicker"
-
-        signal wait(selection: string)
-        function start(sharingList: string): void {
-            GlobalCache.loadScreenSharePicker = true;
-            ScreenShareService.start(sharingList);
-        }
-    }
-
-    IpcHandler {
         target: "alttab"
 
         function next(): void {
-            AltTabService.switchNext();
+            if (!GlobalShortcuts.isLocked())
+                AltTabService.switchNext();
         }
         function previous(): void {
-            AltTabService.switchPrevious();
+            if (!GlobalShortcuts.isLocked())
+                AltTabService.switchPrevious();
         }
         function activate(): void {
-            AltTabService.activateSelected();
+            if (!GlobalShortcuts.isLocked())
+                AltTabService.activateSelected();
         }
         function close(): void {
             AltTabService.close();

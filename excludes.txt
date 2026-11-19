@@ -23,9 +23,12 @@ __pycache__/
 *.jsc
 fonts.cache-*
 
-# Hyprland
-secrets.lua
-/hyprland/json/*.json
+# Local environment/secrets
+secrets.conf
+
+# niri runtime transaction state (persistent settings/includes remain captured)
+.bnsplit-pending.json
+.bnsplit-settings.lock
 
 # Quickshell
 .trash/

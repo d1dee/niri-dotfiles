@@ -81,7 +81,7 @@ BarModule {
                 event.accepted = true;
             } else if (event.key === Qt.Key_F) {
                 if (expandedContentItem.focusedPlayer) {
-                    Quickshell.execDetached(["hyprctl", "eval", `require("hyprland.lua.utils.windows"):focus("${expandedContentItem.focusedPlayer.desktopEntry}")`]);
+                    NiriService.focusApp(expandedContentItem.focusedPlayer.desktopEntry);
                     GlobalStates.expandedBarModule = "";
                     if (expandedContentItem.focusedPlayer.canRaise) {
                         expandedContentItem.focusedPlayer.raise();
@@ -192,7 +192,7 @@ BarModule {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    Quickshell.execDetached(["hyprctl", "eval", `require("hyprland.lua.utils.windows"):focus("${expandedContentItem.focusedPlayer.desktopEntry}")`]);
+                                    NiriService.focusApp(currentPlayer.player.desktopEntry);
                                     GlobalStates.expandedBarModule = "";
                                     if (currentPlayer.player.canRaise)
                                         currentPlayer.player.raise();
