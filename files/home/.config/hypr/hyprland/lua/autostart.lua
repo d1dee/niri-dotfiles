@@ -3,8 +3,8 @@
 -- ========================================
 
 hl.on("hyprland.start", function()
-	hl.exec_cmd("/usr/lib/xdg-desktop-portal")
-	hl.exec_cmd("/usr/lib/gsd-rfkill")
+	-- Portals use packaged D-Bus/systemd activation on Fedora.
+	hl.exec_cmd("/usr/libexec/gsd-rfkill")
 	hl.exec_cmd("awww-daemon")
 	hl.exec_cmd("$BN_SCRIPTS/qs-nothp")
 	hl.exec_cmd("hypridle")

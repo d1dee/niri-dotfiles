@@ -66,7 +66,7 @@ ShellRoot {
         if (GlobalData.wallpaperPath === "")
             Quickshell.execDetached([Paths.selectWallpaperScript, "--path", Paths.defaultWallpaper]);
 
-        Quickshell.execDetached(["sh", "-c", `for p in '[i]notifywait.*var/lib/pacman' '[n]otify-send --app-name=Updates' '[p]w-dump -m'; do pkill --older 120 -f "$p" 2>/dev/null; done`]);
+        Quickshell.execDetached(["sh", "-c", `for p in '[n]otify-send --app-name=Updates' '[p]w-dump -m'; do pkill --older 120 -f "$p" 2>/dev/null; done`]);
     }
 
     Binding {

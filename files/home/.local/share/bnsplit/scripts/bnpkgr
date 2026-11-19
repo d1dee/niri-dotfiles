@@ -14,7 +14,7 @@ trap cleanup EXIT
 FZF_OPTS=(
   --multi --cycle --layout=reverse
   --margin 1
-  --preview 'yay -Qi {1}'
+  --preview 'dnf info --installed -- {1}'
   --preview-window 'down:60%:wrap:sharp'
   --bind 'alt-p:toggle-preview,tab:toggle+down,esc:abort'
   --bind 'alt-k:preview-up,alt-j:preview-down'
@@ -35,12 +35,12 @@ SILENT=0
 [[ "$1" == "--silent" ]] && SILENT=1
 
 # Select packages to uninstall
-pkg_name=$(yay -Qqe | fzf "${FZF_OPTS[@]}")
+pkg_name=$(dnf --quiet repoquery --installed --userinstalled --queryformat '%{name}' | sort -u | fzf "${FZF_OPTS[@]}")
 [[ -z "$pkg_name" ]] && exit 0
 
 # Uninstall packages
 echo -e "Uninstalling packages...\n${MAGENTA}$pkg_name${NC}\n"
-sudo -v
+sudo -v || exit $?
 
 # Keep sudo alive in background
 while true; do
@@ -60,7 +60,8 @@ notify() {
   fi
 }
 
-if echo "$pkg_name" | xargs yay -Rns --noconfirm; then
+mapfile -t packages <<< "$pkg_name"
+if sudo dnf remove --assumeyes --no-autoremove -- "${packages[@]}"; then
   notify showInfo 'All packages removed successfully'
 else
   notify showError 'Some packages failed to uninstall'

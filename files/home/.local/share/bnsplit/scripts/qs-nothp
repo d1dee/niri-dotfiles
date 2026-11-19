@@ -26,6 +26,6 @@
 #   grep THP_enabled /proc/$(pgrep -x quickshell)/status
 
 # "exec" replaces this shell script with python, so no extra process stays
-# around. The full path /usr/bin/quickshell is used so the script can never
+# around. The qs executable is used so the script can never
 # accidentally call itself. "$@" forwards all arguments to quickshell.
-exec python -c 'import ctypes,os,sys;ctypes.CDLL(None).prctl(41,1,0,0,0);os.execvp(sys.argv[1],sys.argv[1:])' /usr/bin/quickshell "$@"
+exec python3 -c 'import ctypes,os,sys;ctypes.CDLL(None).prctl(41,1,0,0,0);os.execvp(sys.argv[1],sys.argv[1:])' qs "$@"

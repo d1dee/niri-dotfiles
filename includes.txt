@@ -3,14 +3,12 @@
 
 # Quickshell
 ~/.config/quickshell/
-/etc/greetd/config.toml
-/etc/tmpfiles.d/bn-greetd.conf
 
 # Bins
 ~/.local/bin/argospm
 ~/.local/bin/libretranslate
-/usr/bin/bnchroma
-/usr/bin/bnclip
+/usr/local/bin/bnchroma
+/usr/local/bin/bnclip
 
 # Scripts
 ~/.local/share/bnsplit/scripts/bnpkgi
@@ -37,4 +35,5 @@
 ~/.themes/bn-adw/
 ~/.icons/bn-adwaita/
 ~/.fonts/
-/usr/share/fonts/Outfit/
+/usr/local/share/fonts/Outfit/
+~/.local/share/fonts/MaterialSymbols/

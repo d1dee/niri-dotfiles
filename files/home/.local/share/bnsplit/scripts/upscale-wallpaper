@@ -11,7 +11,7 @@ FALLBACK_WALL="$HOME/.cache/bnsplit/wallpaper"
 SCALE=2
 QUALITY=85
 MODEL="realesr-animevideov3-x2"
-MODELS_DIR="/usr/lib/upscayl/models"
+MODELS_DIR="${UPSCAYL_MODELS_DIR:-/usr/share/upscayl/models}"
 LOG="/tmp/bnsplit/upscale-wallpaper.log"
 BACKUP_DIR="$HOME/.cache/bnsplit/upscale-backups"
 
@@ -22,6 +22,8 @@ fail() {
 
 mkdir -p "$(dirname "$LOG")" /tmp/bnsplit "$BACKUP_DIR"
 : >"$LOG"
+
+[[ -d $MODELS_DIR ]] || fail "Set UPSCAYL_MODELS_DIR to your Upscayl models directory"
 
 # Resolve current wallpaper from quickshell data (legacy: settings), fallback to cached copy.
 WALL=$(qs ipc call data get wallpaperPath 2>>"$LOG" || true)

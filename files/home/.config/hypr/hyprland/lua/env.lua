@@ -13,7 +13,7 @@ hl.env("PATH",
     HOME .. "/.local/share/flutter/bin:" ..
     HOME .. "/.pub-cache/bin:" ..
     HOME .. "/.config/herd-lite/bin:" ..
-    "/usr/lib/qt6/bin:/usr/bin/vendor_perl:" ..
+    "/usr/lib64/qt6/bin:" ..
     "/opt/android-sdk/cmdline-tools/latest/bin:" ..
     "/opt/android-sdk/platform-tools:" ..
     "/opt/android-sdk/emulator:" ..
@@ -28,9 +28,8 @@ hl.env("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 hl.env("GDK_SCALE", "1")
 hl.env("GDK_BACKEND", "wayland,x11,*")
 hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")
-hl.env("XDG_MENU_PREFIX", "arch-") -- Dolphin 'open with' popup fix
 hl.env("XCURSOR_SIZE", "24")
-hl.env("BROWSER", "zen-browser")
+hl.env("BROWSER", "firefox")
 hl.env("_CHROMIUM_USE_WAYLAND", "1")
 hl.env("GTK_THEME", "bn-adw")
 hl.env("GTK_THEME", "bn-adw", true)

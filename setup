@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-clear
+if [[ -t 1 && -n ${TERM:-} ]]; then clear; fi
+
+if (($# > 1)); then
+  printf 'Usage: ./setup [--skip-libretranslate]\n' >&2
+  exit 1
+fi
+
+case ${1:-} in
+  --help|-h)
+    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Existing login manager is preserved.\n'
+    exit 0
+    ;;
+  ''|--skip-libretranslate) ;;
+  *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
+esac
+skip_libretranslate=${1:-}
 
 dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 files=$dir/files
@@ -18,7 +33,7 @@ info() { printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '%swarning:%s %s\n' "$c_yellow" "$c_off" "$*" >&2; }
 err() { printf '%serror:%s %s\n' "$c_red" "$c_off" "$*" >&2; }
 
-pacman_pkgs=(
+dnf_pkgs=(
   hyprland
   hypridle
   hyprlock
@@ -26,12 +41,12 @@ pacman_pkgs=(
   hyprpicker
   hyprshutdown
   uwsm
-  qt6-5compat
+  qt6-qt5compat
+  qt6-qtmultimedia
+  qt6-qtimageformats
   awww
   plasma-workspace
   kitty
-  ghostty
-  wezterm
   cava
   tmux
   fzf
@@ -42,24 +57,24 @@ pacman_pkgs=(
   slurp
   wtype
   tesseract
-  tesseract-data-eng
-  imagemagick
-  ffmpeg
+  tesseract-langpack-eng
+  ImageMagick
+  ffmpeg-free
   file
   libjxl
   brightnessctl
   ddcutil
   udiskie
   inotify-tools
-  python
-  python-requests
-  python-watchdog
-  python-pillow
-  python-pillow-jpegxl-plugin
-  python-dbus
-  python-gobject
-  python-opencv
-  python-psutil
+  python3
+  python3-pip
+  python3-requests
+  python3-watchdog
+  python3-pillow
+  python3-dbus
+  python3-gobject
+  python3-opencv
+  python3-psutil
   rsync
   gtk3
   gtk4
@@ -71,53 +86,57 @@ pacman_pkgs=(
   xdg-desktop-portal
   xdg-desktop-portal-gtk
   xdg-desktop-portal-hyprland
-  networkmanager
+  NetworkManager
   bluez
   upower
   power-profiles-daemon
   pipewire
   wireplumber
-  pipewire-pulse
+  pipewire-pulseaudio
   pipewire-alsa
-  pacman-contrib
   polkit
   procps-ng
   psmisc
   iputils
   util-linux
   zoxide
-  fd
+  fd-find
   vim
   zenity
   libqalculate
-  gpu-screen-recorder
+  qalculate
   fontconfig
   adwaita-icon-theme
   papirus-icon-theme
-  noto-fonts
-  noto-fonts-emoji
-  ttf-roboto
-  ttf-jetbrains-mono-nerd
+  google-noto-sans-fonts
+  google-noto-color-emoji-fonts
+  google-roboto-fonts
+  jetbrains-mono-fonts
   gnome-control-center
   gnome-calendar
   gnome-clocks
   nautilus
   evolution-data-server
   gnome-settings-daemon
-  geoclue
-  greetd
-  acl
-  base-devel
+  geoclue2
+  kde-connect
+  geary
+  firefox
+  policycoreutils
   git
 )
 
-aur_pkgs=(
-  ttf-material-symbols-variable-git
+optional_pkgs=(
+  ghostty
+  wezterm
+  gpu-screen-recorder
   morewaita-icon-theme
-  bibata-cursor-theme-bin
+  bibata-cursor-themes
   upscayl-ncnn
-  quickshell-git
+  python3-pillow-jxl-plugin
 )
+
+dnf_pkgs+=(quickshell)
 
 if ((EUID == 0)); then
   err "don't run this as root, sudo is used when needed"
@@ -125,54 +144,112 @@ if ((EUID == 0)); then
 fi
 
 if [[ ! -d $files ]]; then
-  err "missing $files, run sync.sh first"
+  err "missing $files; run setup from a complete checkout"
   exit 1
 fi
 
 # --- requirements ---
 step "Checking requirements"
-missing=()
-command -v pacman >/dev/null || missing+=(pacman)
-command -v yay >/dev/null || missing+=(yay)
-
-if ((${#missing[@]})); then
-  for m in "${missing[@]}"; do
-    case $m in
-    pacman) err "pacman is missing: this script only works on Arch" ;;
-    yay)
-      err "yay is missing, install it with:"
-      echo "  sudo pacman -S --needed git base-devel"
-      echo "  git clone https://aur.archlinux.org/yay-bin.git /tmp/yay-bin"
-      echo "  cd /tmp/yay-bin; makepkg -si"
-      ;;
-    esac
-  done
+if [[ ! -r /etc/os-release ]]; then
+  err "cannot identify the operating system"
   exit 1
 fi
-info "pacman and yay found"
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ ${ID:-} != fedora ]] || ! command -v dnf5 >/dev/null; then
+  err "this installer requires Fedora with DNF5"
+  exit 1
+fi
+if [[ -e /run/ostree-booted ]]; then
+  err "Fedora Atomic desktops are not supported; use a mutable Fedora installation"
+  exit 1
+fi
+if [[ $(uname -m) != x86_64 ]]; then
+  err "bundled bnclip and bnchroma binaries require x86_64"
+  exit 1
+fi
+command -v sudo >/dev/null || { err "sudo is required"; exit 1; }
+info "Fedora ${VERSION_ID:-}, DNF5 found"
 
 step "Requesting sudo"
 sudo -v
 
 # --- packages ---
-step "Syncing package databases"
-sudo pacman -Sy
+step "Refreshing Fedora repository metadata"
+sudo dnf5 makecache --refresh
 
-if ((${#pacman_pkgs[@]})); then
-  step "Installing ${#pacman_pkgs[@]} packages from the official repos"
-  sudo pacman -S --needed --noconfirm "${pacman_pkgs[@]}"
+# Never enable a third-party repository implicitly. See README for COPR setup.
+step "Checking required packages"
+available=$(dnf5 -q repoquery --available --queryformat '%{name}\n' "${dnf_pkgs[@]}" "${optional_pkgs[@]}")
+missing=()
+for pkg in "${dnf_pkgs[@]}"; do
+  if ! grep -Fxq -- "$pkg" <<< "$available" && ! rpm -q "$pkg" >/dev/null 2>&1; then
+    missing+=("$pkg")
+  fi
+done
+if ((${#missing[@]})); then
+  err "required packages unavailable: ${missing[*]}"
+  err "configure the Fedora/COPR repositories described in README.md, then retry"
+  exit 1
 fi
+for pkg in "${optional_pkgs[@]}"; do
+  if grep -Fxq -- "$pkg" <<< "$available" || rpm -q "$pkg" >/dev/null 2>&1; then
+    dnf_pkgs+=("$pkg")
+  else
+    warn "optional package unavailable: $pkg (related feature may need manual installation)"
+  fi
+done
 
-if ((${#aur_pkgs[@]})); then
-  step "Installing ${#aur_pkgs[@]} packages from the AUR"
-  yay -S --needed --noconfirm "${aur_pkgs[@]}"
-fi
+step "Installing ${#dnf_pkgs[@]} Fedora packages"
+sudo dnf5 install "${dnf_pkgs[@]}"
+
+step "Checking session executables"
+for cmd in start-hyprland qs awww awww-daemon; do
+  command -v "$cmd" >/dev/null || { err "required command missing after installation: $cmd"; exit 1; }
+done
 
 # --- stage a copy and rewrite the home path ---
 step "Staging config files"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 cp -a -- "$files/." "$tmp/"
+
+if [[ $(fc-match -f '%{family}' 'Material Symbols Sharp') != *'Material Symbols Sharp'* ]]; then
+  step "Downloading Material Symbols Sharp from Google's upstream repository"
+  font_dir="$tmp/home/.local/share/fonts/MaterialSymbols"
+  mkdir -p -- "$font_dir"
+  curl --fail --location --retry 3 \
+    'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsSharp%5BFILL,GRAD,opsz,wght%5D.ttf' \
+    --output "$font_dir/MaterialSymbolsSharp.ttf"
+  curl --fail --location --retry 3 \
+    'https://raw.githubusercontent.com/google/material-design-icons/master/LICENSE' \
+    --output "$font_dir/LICENSE"
+fi
+
+# Preserve Fedora's login manager and PAM/SELinux policy. The upstream greeter
+# executes user-writable code from a private home and is not deployed on Fedora.
+rm -f -- "$tmp/root/etc/greetd/config.toml" "$tmp/root/etc/tmpfiles.d/bn-greetd.conf"
+
+# Keep unmanaged executables/fonts out of RPM-owned system paths.
+mkdir -p -- "$tmp/root/usr/local/bin" "$tmp/root/usr/local/share/fonts"
+for binary in bnclip bnchroma; do
+  if [[ -f $tmp/root/usr/bin/$binary ]]; then
+    mv -- "$tmp/root/usr/bin/$binary" "$tmp/root/usr/local/bin/"
+  fi
+done
+if [[ -d $tmp/root/usr/share/fonts/Outfit ]]; then
+  mv -- "$tmp/root/usr/share/fonts/Outfit" "$tmp/root/usr/local/share/fonts/"
+fi
+
+step "Checking bundled binary dependencies"
+for binary in "$tmp/root/usr/local/bin/bnclip" "$tmp/root/usr/local/bin/bnchroma"; do
+  dependencies=$(ldd "$binary" 2>&1) || { err "cannot inspect dependencies of $binary: $dependencies"; exit 1; }
+  if [[ $dependencies == *"not found"* ]]; then
+    err "$binary has missing Fedora libraries: $dependencies"
+    err "rebuild this utility for Fedora before deploying"
+    exit 1
+  fi
+done
 
 if [[ $HOME != "$old_home" ]]; then
   info "rewriting $old_home -> $HOME"
@@ -214,33 +291,21 @@ if ((backed_up == 0)); then
   rmdir -- "$backup" 2>/dev/null || true
 fi
 
-step "Preparing greeter directories"
-if [[ -f /etc/tmpfiles.d/bn-greetd.conf ]]; then
-  sudo systemd-tmpfiles --create /etc/tmpfiles.d/bn-greetd.conf
-fi
+step "Restoring SELinux labels for installed system files"
+sudo restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma /usr/local/share/fonts/Outfit
 
 step "Refreshing font cache"
 fc-cache -f
 
-# --- greetd ---
-step "Switching display manager to greetd"
-if id greeter >/dev/null 2>&1 && [[ -d $HOME/.config/quickshell ]]; then
-  info "granting greeter access to the quickshell config"
-  sudo setfacl -m u:greeter:x "$HOME"
-  sudo setfacl -R -m u:greeter:rwX "$HOME/.config/quickshell"
-  find "$HOME/.config/quickshell" -type d \
-    -exec sudo setfacl -m d:u:greeter:rwX {} +
-fi
-if systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
-  info "disabling current display manager"
-  sudo systemctl disable display-manager.service
-fi
-sudo systemctl enable greetd.service
+info "Existing display manager preserved; select Hyprland at the login screen"
 
 # --- libretranslate ---
-step "Setting up LibreTranslate virtualenv"
-python -m venv "$HOME/.local/bin/libretranslate_env"
-"$HOME/.local/bin/libretranslate_env/bin/pip" install libretranslate
+if [[ $skip_libretranslate != --skip-libretranslate ]]; then
+  step "Setting up LibreTranslate virtualenv"
+  mkdir -p -- "$HOME/.local/bin"
+  python3 -m venv "$HOME/.local/bin/libretranslate_env"
+  "$HOME/.local/bin/libretranslate_env/bin/pip" install libretranslate
+fi
 
 # --- summary ---
 printf '\n%sAll done !!!%s\n' "$c_green" "$c_off"
@@ -251,8 +316,4 @@ else
   echo "No existing files were overwritten, so no backup was created."
 fi
 
-printf '\n%sRestart recommended%s to start greetd and load the new configuration.\n' "$c_yellow" "$c_off"
-read -rp "Reboot now? [y/N] " answer
-if [[ $answer == [yY]* ]]; then
-  systemctl reboot
-fi
+printf '\n%sLog out and select Hyprland%s to load the new configuration.\n' "$c_yellow" "$c_off"
