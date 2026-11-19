@@ -115,7 +115,7 @@ Singleton {
     }
 
     function save() {
-        if (!_ready)
+        if (!_ready || Paths.isGreeter)
             return;
         dataJson.setData(JSON.stringify(collectData()));
     }

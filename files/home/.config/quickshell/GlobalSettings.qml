@@ -93,7 +93,7 @@ Singleton {
     }
 
     function save() {
-        if (!_ready)
+        if (!_ready || Paths.isGreeter)
             return;
         settingsJson.setData(JSON.stringify(collectData(), null, 2));
     }

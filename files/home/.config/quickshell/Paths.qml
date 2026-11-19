@@ -7,6 +7,7 @@ import Quickshell
 import "./lib/FileUtils.js" as FileUtils
 
 Singleton {
+    readonly property bool isGreeter: Quickshell.env("BNSPLIT_GREETER") === "1"
     // XDG Dirs, with "file://"
     readonly property string home: StandardPaths.standardLocations(StandardPaths.HomeLocation)[0]
     readonly property string pictures: StandardPaths.standardLocations(StandardPaths.PicturesLocation)[0]
@@ -37,7 +38,7 @@ Singleton {
     readonly property string wallpapersJsonFile: state + "/wallpapers.json"
     readonly property string wallpaperSelectedColorIndexFile: state + "/color-number"
     readonly property string wallpaperDir: pictures + "/Wallpapers"
-    readonly property string greeterSettingsJsonFile: "/var/lib/greeter/bnsplit/greeter-settings.json"
+    readonly property string greeterSettingsJsonFile: "/var/lib/greetd/bnsplit/greeter-settings.json"
     readonly property string qalcHistory: state + "/qalc.history"
     readonly property string weatherFile: state + "/weather.json"
     readonly property string mprisFile: state + "/mpris-players.json"
@@ -79,7 +80,7 @@ Singleton {
     readonly property string dotconfDir: Quickshell.shellDir + "/assets/config"
 
     Component.onCompleted: {
-        if (Quickshell.env("USER").toString() !== "greeter") {
+        if (!isGreeter) {
             const trim = str => FileUtils.trimFileProtocol(str);
 
             Quickshell.execDetached(["touch", `${trim(settingsJsonFile)}`]);

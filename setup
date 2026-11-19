@@ -10,7 +10,7 @@ fi
 
 case ${1:-} in
   --help|-h)
-    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Existing login manager is preserved.\n'
+    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Installs the greetd greeter and Quickshell lock screen.\n'
     exit 0
     ;;
   ''|--skip-libretranslate) ;;
@@ -123,6 +123,9 @@ dnf_pkgs=(
   geary
   firefox
   policycoreutils
+  greetd
+  greetd-selinux
+  dbus-daemon
   git
 )
 
@@ -204,9 +207,11 @@ step "Installing ${#dnf_pkgs[@]} Fedora packages"
 sudo dnf5 install "${dnf_pkgs[@]}"
 
 step "Checking session executables"
-for cmd in start-hyprland qs awww awww-daemon; do
+for cmd in start-hyprland qs awww awww-daemon dbus-run-session; do
   command -v "$cmd" >/dev/null || { err "required command missing after installation: $cmd"; exit 1; }
 done
+sudo systemd-sysusers /usr/lib/sysusers.d/greetd.conf
+getent passwd greetd >/dev/null || { err "Fedora greetd system account is missing"; exit 1; }
 
 # --- stage a copy and rewrite the home path ---
 step "Staging config files"
@@ -225,10 +230,6 @@ if [[ $(fc-match -f '%{family}' 'Material Symbols Sharp') != *'Material Symbols 
     'https://raw.githubusercontent.com/google/material-design-icons/master/LICENSE' \
     --output "$font_dir/LICENSE"
 fi
-
-# Preserve Fedora's login manager and PAM/SELinux policy. The upstream greeter
-# executes user-writable code from a private home and is not deployed on Fedora.
-rm -f -- "$tmp/root/etc/greetd/config.toml" "$tmp/root/etc/tmpfiles.d/bn-greetd.conf"
 
 # Keep unmanaged executables/fonts out of RPM-owned system paths.
 mkdir -p -- "$tmp/root/usr/local/bin" "$tmp/root/usr/local/share/fonts"
@@ -259,6 +260,29 @@ else
   info "home path already matches, no rewrite needed"
 fi
 
+step "Staging a system-owned greeter"
+greeter_dir="$tmp/root/usr/local/share/bnsplit-greeter"
+mkdir -p -- "$greeter_dir"
+rsync -rLt --exclude='/store/settings.json' --exclude='/store/data.json' \
+  -- "$tmp/home/.config/quickshell/" "$greeter_dir/"
+# Never expose personal preferences, API keys, or private wallpaper paths at login.
+printf '{}\n' > "$greeter_dir/store/settings.json"
+printf '{}\n' > "$greeter_dir/store/data.json"
+chmod -R u=rwX,go=rX -- "$greeter_dir"
+install -m 0755 -- "$tmp/home/.config/quickshell/greeter/greeter.sh" "$tmp/root/usr/local/bin/bnsplit-greeter"
+
+# User-installed fonts are inaccessible at the login screen. Publish the icon
+# font system-wide, just like Outfit, without granting access to a private home.
+symbol_dir="$tmp/root/usr/local/share/fonts/MaterialSymbols"
+mkdir -p -- "$symbol_dir"
+if [[ -f $tmp/home/.local/share/fonts/MaterialSymbols/MaterialSymbolsSharp.ttf ]]; then
+  cp -- "$tmp/home/.local/share/fonts/MaterialSymbols/MaterialSymbolsSharp.ttf" "$symbol_dir/"
+  cp -- "$tmp/home/.local/share/fonts/MaterialSymbols/LICENSE" "$symbol_dir/"
+else
+  symbol_font=$(fc-match -f '%{file}' 'Material Symbols Sharp')
+  cp -- "$symbol_font" "$symbol_dir/MaterialSymbolsSharp.ttf"
+fi
+
 # --- deploy ---
 step "Deploying config files"
 info "existing files that get overwritten are backed up to:"
@@ -279,6 +303,14 @@ if [[ -d $tmp/root ]]; then
     -- "$tmp/root/" /
 fi
 
+step "Preparing greeter state and lock authentication"
+sudo chown -R root:root /usr/local/share/bnsplit-greeter
+sudo chmod -R u=rwX,go=rX /usr/local/share/bnsplit-greeter
+sudo chown root:root /usr/local/bin/bnsplit-greeter /etc/pam.d/bnsplit-lock
+sudo chmod 0755 /usr/local/bin/bnsplit-greeter
+sudo chmod 0644 /etc/pam.d/bnsplit-lock
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/bn-greetd.conf
+
 # --- root-made backups live in $HOME: hand them back to the user ---
 sudo chown -R -- "$(id -u):$(id -g)" "$backup"
 find "$backup" -mindepth 1 -type d -empty -delete 2>/dev/null || true
@@ -292,12 +324,14 @@ if ((backed_up == 0)); then
 fi
 
 step "Restoring SELinux labels for installed system files"
-sudo restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma /usr/local/share/fonts/Outfit
+sudo restorecon -RF /usr/local/bin/bnclip /usr/local/bin/bnchroma \
+  /usr/local/bin/bnsplit-greeter /usr/local/share/bnsplit-greeter \
+  /usr/local/share/fonts/Outfit /usr/local/share/fonts/MaterialSymbols \
+  /var/lib/greetd /etc/greetd /etc/tmpfiles.d/bn-greetd.conf /etc/pam.d/bnsplit-lock
 
 step "Refreshing font cache"
+sudo fc-cache -f /usr/local/share/fonts
 fc-cache -f
-
-info "Existing display manager preserved; select Hyprland at the login screen"
 
 # --- libretranslate ---
 if [[ $skip_libretranslate != --skip-libretranslate ]]; then
@@ -306,6 +340,18 @@ if [[ $skip_libretranslate != --skip-libretranslate ]]; then
   python3 -m venv "$HOME/.local/bin/libretranslate_env"
   "$HOME/.local/bin/libretranslate_env/bin/pip" install libretranslate
 fi
+
+step "Enabling greetd for the next boot"
+# Do not stop an active display manager or terminate the current desktop.
+if systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
+  current_dm=$(systemctl show --property=Id --value display-manager.service)
+  if [[ $current_dm != greetd.service ]]; then
+    info "disabling $current_dm for the next boot (current session stays running)"
+    sudo systemctl disable "$current_dm"
+  fi
+fi
+sudo systemctl enable --force greetd.service
+sudo systemctl set-default graphical.target
 
 # --- summary ---
 printf '\n%sAll done !!!%s\n' "$c_green" "$c_off"
@@ -316,4 +362,5 @@ else
   echo "No existing files were overwritten, so no backup was created."
 fi
 
-printf '\n%sLog out and select Hyprland%s to load the new configuration.\n' "$c_yellow" "$c_off"
+printf '\n%sReboot when ready%s to start the Quickshell greeter, then select Hyprland.\n' "$c_yellow" "$c_off"
+info "No display manager was started or stopped in this session."

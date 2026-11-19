@@ -24,14 +24,17 @@ Singleton {
     onIsLockingChanged: GlobalStates.isLocking = root.isLocking
 
     function lock(navigateBeforeLock) {
-        if (locked)
+        if (locked || isLocking)
             return;
         root.isLocking = true;
+        root.hasFailed = false;
+        root.lockInput = false;
+        root.passwordInput = "";
         root.navigateBeforeLock = navigateBeforeLock;
-        root.lastSpecialWorkspace = HyprlandService.currentSpecialWorkspace;
+        root.lastSpecialWorkspace = HyprlandService.currentSpecialWorkspace || false;
         Hyprland.dispatch(`hl.dsp.focus({ monitor = '${GlobalSettings.mainMonitor}' })`);
         if (root.navigateBeforeLock) {
-            root.lastTotalWindows = Hyprland.focusedWorkspace.toplevels.values.length;
+            root.lastTotalWindows = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.toplevels.values.length : 0;
             if (root.lastSpecialWorkspace !== false)
                 Hyprland.dispatch(`hl.dsp.workspace.toggle_special("${root.lastSpecialWorkspace.replace("special:", "")}")`);
             Hyprland.dispatch("require('hyprland.lua.utils.workspaces'):go('new')");
@@ -47,13 +50,21 @@ Singleton {
     }
 
     function unlock() {
-        shortcutInhibitor.enabled = false;
-        showUI = false;
-        unlockTimer.start();
+        // IPC/logind unlock requests are not proof of authentication.
+        if (!locked || !showUI || pamContext.active)
+            return;
+        if (!pamContext.start())
+            root.hasFailed = true;
     }
 
     function submit() {
-        if (isAuthenticating || !pamContext.responseRequired)
+        if (!locked || !showUI || lockInput || isAuthenticating)
+            return;
+        if (!pamContext.active) {
+            root.unlock();
+            return;
+        }
+        if (!pamContext.responseRequired)
             return;
 
         hasFailed = false;
@@ -84,7 +95,7 @@ Singleton {
         onTriggered: {
             root.locked = true;
             root.showUI = true;
-            pamContext.start();
+            root.unlock();
             shortcutInhibitor.enabled = false;
             root.isLocking = false;
         }
@@ -118,22 +129,29 @@ Singleton {
 
     PamContext {
         id: pamContext
+        config: "bnsplit-lock"
 
         onPamMessage: {
-            if (messageIsError) {
+            if (messageIsError)
                 root.hasFailed = true;
+            if (responseRequired)
                 root.isAuthenticating = false;
-            }
         }
 
         onCompleted: result => {
             root.isAuthenticating = false;
+            root.passwordInput = "";
+            if (!root.locked || !root.showUI)
+                return;
             if (result === PamResult.Success) {
                 root.hasFailed = false;
-                root.unlock();
+                root.showUI = false;
+                unlockTimer.start();
             } else {
                 root.hasFailed = true;
-                pamContext.start(); // Restart session for next attempt
+                // Retry rejected credentials, but do not loop on a broken PAM service.
+                if (result === PamResult.Failed)
+                    Qt.callLater(() => root.unlock());
             }
         }
     }

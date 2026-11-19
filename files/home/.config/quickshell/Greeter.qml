@@ -22,7 +22,7 @@ Variants {
 
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "quickshell:greeter"
-        WlrLayershell.keyboardFocus: screen.name === Hyprland.focusedMonitor.name ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+        WlrLayershell.keyboardFocus: (!Hyprland.focusedMonitor || screen.name === Hyprland.focusedMonitor.name) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         GreeterContent {}
     }

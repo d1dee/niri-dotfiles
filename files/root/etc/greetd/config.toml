@@ -2,5 +2,5 @@
 vt = 1
 
 [default_session]
-command = "/home/bnsplit/.config/quickshell/greeter/greeter.sh"
-user = "greeter"
+command = "/usr/local/bin/bnsplit-greeter"
+user = "greetd"

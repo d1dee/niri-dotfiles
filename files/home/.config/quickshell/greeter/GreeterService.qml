@@ -14,8 +14,11 @@ Singleton {
     property string echoResponse: ""
     property bool isAuthenticating: false
     property bool authenticationHasFailed: false
+    property bool awaitingResponse: false
+    property bool responseEcho: false
 
     property string _pendingPassword: ""
+    property bool _hasPendingPassword: false
     property string _pendingSessionType: ""
     property var _pendingSessionCmd: []
     property string _pendingSessionDesktop: ""
@@ -54,7 +57,7 @@ Singleton {
 
     Process {
         id: discoveryProcess
-        command: [Paths.greeterFetcherScript]
+        command: ["python3", Paths.greeterFetcherScript]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -76,24 +79,47 @@ Singleton {
         target: Greetd
 
         function onAuthMessage(message, error, responseRequired, echoResponse) {
-            if (echoResponse && message.toString().includes('left to unlock')) {
+            if (error || !responseRequired) {
                 root.echoResponse = message;
             }
 
-            if (responseRequired && root._pendingPassword !== "") {
+            if (responseRequired && root._hasPendingPassword && !echoResponse) {
                 Greetd.respond(root._pendingPassword);
                 root._pendingPassword = "";
+                root._hasPendingPassword = false;
+            } else if (responseRequired) {
+                root._pendingPassword = "";
+                root._hasPendingPassword = false;
+                root.awaitingResponse = true;
+                root.responseEcho = echoResponse;
+                root.echoResponse = message;
+                root.isAuthenticating = false;
             }
         }
 
         function onAuthFailure(message) {
             root.isAuthenticating = false;
+            root.awaitingResponse = false;
             root.authenticationHasFailed = true;
             root._pendingPassword = "";
+            root._hasPendingPassword = false;
+            root.echoResponse = message;
+        }
+
+        function onError(error) {
+            root.isAuthenticating = false;
+            root.awaitingResponse = false;
+            root.authenticationHasFailed = true;
+            root._pendingPassword = "";
+            root._hasPendingPassword = false;
+            root.echoResponse = error;
         }
 
         function onReadyToLaunch() {
             root.isAuthenticating = false;
+            root.awaitingResponse = false;
+            root._pendingPassword = "";
+            root._hasPendingPassword = false;
             let env = [`XDG_SESSION_TYPE=${root._pendingSessionType}`];
             if (root._pendingSessionDesktop !== "") {
                 env.push(`XDG_SESSION_DESKTOP=${root._pendingSessionDesktop}`);
@@ -105,18 +131,32 @@ Singleton {
             if (currentDesktop !== "")
                 env.push(`XDG_CURRENT_DESKTOP=${currentDesktop}`);
             Greetd.launch(root._pendingSessionCmd, env);
-            Quickshell.execDetached(["killall", "Hyprland"]);
         }
     }
 
     function login(username, password, sessionCmd, sessionType, sessionDesktop, desktopNames) {
+        if (root.awaitingResponse) {
+            root.awaitingResponse = false;
+            root.isAuthenticating = true;
+            Greetd.respond(password);
+            return;
+        }
+        if (root.isAuthenticating)
+            return;
+        if (!Greetd.available || !username || !sessionCmd || sessionCmd.length === 0) {
+            root.echoResponse = "Select a user and session; login must run under greetd.";
+            root.authenticationHasFailed = true;
+            return;
+        }
         root._pendingPassword = password;
+        root._hasPendingPassword = true;
         root._pendingSessionType = sessionType;
-        root._pendingSessionCmd = typeof sessionCmd === "string" ? `sh -c '${sessionCmd}' >/dev/null 2>&1` : sessionCmd;
+        root._pendingSessionCmd = typeof sessionCmd === "string" ? ["/bin/sh", "-c", sessionCmd] : sessionCmd;
         root._pendingSessionDesktop = sessionDesktop || "";
         root._pendingDesktopNames = desktopNames || [];
         root.isAuthenticating = true;
         root.authenticationHasFailed = false;
+        root.responseEcho = false;
         root.echoResponse = "";
         Greetd.createSession(username);
     }

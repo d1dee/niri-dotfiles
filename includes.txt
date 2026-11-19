@@ -3,6 +3,9 @@
 
 # Quickshell
 ~/.config/quickshell/
+/etc/greetd/config.toml
+/etc/tmpfiles.d/bn-greetd.conf
+/etc/pam.d/bnsplit-lock
 
 # Bins
 ~/.local/bin/argospm
@@ -36,4 +39,5 @@
 ~/.icons/bn-adwaita/
 ~/.fonts/
 /usr/local/share/fonts/Outfit/
+/usr/local/share/fonts/MaterialSymbols/
 ~/.local/share/fonts/MaterialSymbols/

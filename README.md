@@ -61,11 +61,57 @@ checks the bundled x86_64 utilities for missing shared libraries. Unmanaged
 utilities and Outfit fonts are installed under `/usr/local`, with SELinux labels
 restored. No SELinux policy is disabled or relaxed.
 
-**Your existing display manager is preserved.** Log out and select Hyprland at
-the login screen after installation. The upstream Quickshell greetd system
-configuration is deliberately not deployed: it executes user-writable code from
-a private home directory and has not been validated with Fedora's SELinux/PAM
-policy. The regular desktop shell and lock screen remain included.
+**The installer now sets up the Quickshell greeter and lock screen.** It installs
+Fedora's `greetd`, `greetd-selinux`, and D-Bus packages, enables `greetd.service`,
+and selects `graphical.target` for the next boot. An existing display manager is
+disabled for future boots, but no active display manager is stopped or restarted.
+Reboot when ready and select Hyprland at the new login screen.
+
+### Greeter And Lock
+
+The greeter runs as Fedora's packaged `greetd` system account. Its launcher is
+`/usr/local/bin/bnsplit-greeter` and its QML/config/assets are a root-owned copy
+under `/usr/local/share/bnsplit-greeter`. Personal preferences, API keys, and
+private wallpaper paths are not copied into the greeter's settings/data files.
+The bundled wallpaper and palette are used instead. Only last-user/session and
+greeter preferences are writable under `/var/lib/greetd/bnsplit`; cache and
+configuration directories also live under `/var/lib/greetd`. No home-directory
+ACLs or access to your private configuration are needed. Re-run `setup` after
+changing greeter code to refresh the system copy.
+
+Login uses Fedora's packaged greetd PAM stacks unchanged. The Quickshell lock
+screen uses the separate `/etc/pam.d/bnsplit-lock` service, which includes
+`system-auth` and respects your authselect authentication settings. It uses the
+Wayland session-lock protocol and only releases the lock after PAM reports
+success. IPC/logind unlock notifications are not treated as authentication.
+`Super + Delete` or `loginctl lock-session` requests a lock through hypridle;
+idle locking starts after 10 minutes. If Quickshell IPC is unavailable, hypridle
+falls back to hyprlock.
+
+Keep a spare TTY/root-capable shell available for the first test. Verify a
+rejected password, a successful password, login/logout, locking on every monitor,
+and suspend/resume before relying on unattended locking. Actual authentication
+and hardware/session behavior require a real Fedora session test. The installer
+does not lock, log out, or reboot the current session automatically.
+
+For greeter startup failures, switch to a TTY with `Ctrl + Alt + F3` and inspect:
+
+```sh
+journalctl -b -u greetd.service
+sudo ausearch -m AVC,USER_AVC -ts recent
+```
+
+Keep SELinux enforcing. The installer uses Fedora's greetd policy and restores
+standard file contexts; investigate any AVC denials rather than disabling policy
+or granting broad home access. To recover to text login on the next boot:
+
+```sh
+sudo systemctl disable greetd.service
+sudo systemctl set-default multi-user.target
+```
+
+Alternatively, disable greetd and re-enable your previous display manager. The
+normal file backup does not restore systemd enablement/default-target changes.
 
 LibreTranslate is installed into a Python virtual environment. If its Python or
 binary dependencies are unavailable on your Fedora release, use
@@ -94,6 +140,7 @@ smoke test on the target machine.
 
 - `Super + K` keybind list
 - `Super + Enter` terminal
+- `Super + Delete` lock screen
 
 The keybind list only shows documented keyboard binds. Mouse binds, submaps, and undocumented binds are not listed.
 

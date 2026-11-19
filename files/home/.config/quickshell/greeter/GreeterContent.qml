@@ -250,19 +250,10 @@ Rectangle {
         horizontalAlignment: Text.AlignHCenter
         width: parent.width
         color: Theme.colors.textSecondary
-        opacity: GreeterService.authenticationHasFailed ? 1 : 0
+        opacity: (GreeterService.authenticationHasFailed || GreeterService.awaitingResponse) ? 1 : 0
         wrapMode: Text.WordWrap
 
-        Component.onCompleted: text = GreeterService.echoResponse || "Authentication failed"
-
-        Connections {
-            target: GreeterService
-            function onAuthenticationHasFailedChanged() {
-                if (GreeterService.authenticationHasFailed) {
-                    statusText.text = GreeterService.echoResponse || "Authentication failed";
-                }
-            }
-        }
+        text: GreeterService.echoResponse || "Authentication failed"
 
         Behavior on opacity {
             NumberAnimation {
@@ -311,7 +302,7 @@ Rectangle {
             color: Theme.colors.white
             font.family: Theme.fontFamilies.main
             font.pixelSize: Theme.fontPixelSizes.larger
-            echoMode: TextInput.Password
+            echoMode: (GreeterService.awaitingResponse && GreeterService.responseEcho) ? TextInput.Normal : TextInput.Password
             focus: true
             clip: true
             enabled: !GreeterService.isAuthenticating
@@ -333,8 +324,10 @@ Rectangle {
             }
 
             onAccepted: {
-                if (text.length > 0)
-                    GreeterService.login(userCombo.currentValue.text, text, sessionCombo.currentValue.exec, sessionCombo.currentValue.type, sessionCombo.currentValue.sessionDesktop, sessionCombo.currentValue.desktopNames);
+                const user = userCombo.currentValue;
+                const session = sessionCombo.currentValue;
+                GreeterService.login(user ? user.text : "", text, session ? session.exec : [], session ? session.type : "", session ? session.sessionDesktop : "", session ? session.desktopNames : []);
+                clear();
             }
 
             onEnabledChanged: {

@@ -2,7 +2,9 @@ hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")
 hl.env("XCURSOR_SIZE", "24")
 
 hl.on("hyprland.start", function()
-	hl.exec_cmd("/usr/bin/quickshell -p /home/bnsplit/.config/quickshell/Greeter.qml")
+	-- Greetd.launch exits qs after acknowledgement. Only then release this
+	-- greeter compositor/VT; never kill other Hyprland sessions by process name.
+	hl.exec_cmd("qs -p /usr/local/share/bnsplit-greeter/Greeter.qml; hyprctl dispatch 'hl.dsp.exit()'")
 end)
 
 hl.bind("XF86MonBrightnessUp", hl.dsp.exec_cmd("brightnessctl s 5%+"), { repeating = true })
