@@ -106,7 +106,7 @@ dnf_pkgs=(
   util-linux
   zoxide
   fd-find
-  vim
+  vim-enhanced
   zenity
   libqalculate
   qalculate
