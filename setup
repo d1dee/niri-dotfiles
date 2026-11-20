@@ -10,7 +10,7 @@ fi
 
 case ${1:-} in
   --help|-h)
-    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Installs niri, the greetd greeter and Quickshell lock screen.\nAutomatically enables errornointernet/quickshell and scottames/awww COPRs.\n'
+    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Installs niri, the greetd greeter and Quickshell lock screen.\nAutomatically enables errornointernet/quickshell and scottames/awww COPRs, plus RPM Fusion Free and Nonfree.\n'
     exit 0
     ;;
   ''|--skip-libretranslate) ;;
@@ -203,6 +203,31 @@ for repo in "${copr_repos[@]}"; do
   fi
 done
 
+step "Enabling RPM Fusion Free and Nonfree repositories"
+warn "RPM Fusion is a third-party repository, separate from Fedora and COPR"
+fedora_release=$(rpm -E '%fedora')
+if [[ ! $fedora_release =~ ^[0-9]+$ ]]; then
+  err "cannot determine Fedora release for RPM Fusion: $fedora_release"
+  exit 1
+fi
+rpmfusion_release_rpms=()
+for variant in free nonfree; do
+  if ! rpm -q "rpmfusion-$variant-release" >/dev/null 2>&1; then
+    rpmfusion_release_rpms+=("https://mirrors.rpmfusion.org/$variant/fedora/rpmfusion-$variant-release-$fedora_release.noarch.rpm")
+  fi
+done
+if ((${#rpmfusion_release_rpms[@]})); then
+  if ! sudo dnf5 install -y "${rpmfusion_release_rpms[@]}"; then
+    err "could not install RPM Fusion release packages for Fedora $fedora_release"
+    exit 1
+  fi
+fi
+# Also re-enable the normal channels when release packages are already installed.
+# Do not enable testing/tainted repositories or install codecs/drivers implicitly.
+sudo dnf5 config-manager setopt \
+  rpmfusion-free.enabled=1 rpmfusion-free-updates.enabled=1 \
+  rpmfusion-nonfree.enabled=1 rpmfusion-nonfree-updates.enabled=1
+
 step "Refreshing Fedora repository metadata"
 sudo dnf5 makecache --refresh
 
@@ -216,7 +241,7 @@ for pkg in "${dnf_pkgs[@]}"; do
 done
 if ((${#missing[@]})); then
   err "required packages unavailable: ${missing[*]}"
-  err "check Fedora/COPR package availability for this release; see README.md"
+  err "check Fedora/COPR/RPM Fusion package availability for this release; see README.md"
   exit 1
 fi
 for pkg in "${optional_pkgs[@]}"; do

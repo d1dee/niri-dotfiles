@@ -52,6 +52,19 @@ including any signing-key imports it needs. These repositories remain
 enabled for later DNF updates. They are community maintained, not supported by
 Fedora; review them before running setup.
 
+Setup also enables [RPM Fusion Free and Nonfree](https://rpmfusion.org/Configuration).
+It detects the Fedora release with `rpm -E %fedora`, installs any missing
+`rpmfusion-free-release` / `rpmfusion-nonfree-release` RPMs from
+`https://mirrors.rpmfusion.org/` using `-y`, and enables the normal Free/Nonfree
+and updates repositories, including channels that were previously disabled.
+Already installed release packages are not downloaded again. RPM Fusion is
+separate from Fedora and COPR; Nonfree includes software under non-free licenses.
+
+Repository setup does not enable testing/tainted channels, install NVIDIA
+drivers, swap `ffmpeg-free` for full FFmpeg, or install extra codec groups.
+Those remain separate choices. RPM Fusion and COPR configuration changes persist
+after setup and are not restored by the dotfile backup.
+
 niri and the remaining required desktop packages are resolved from enabled
 repositories, including Fedora's normal repositories. Setup does not enable a
 Hyprland COPR or force packages from another Fedora release. Repository/plugin
@@ -77,7 +90,8 @@ translation environment.
 
 Existing configuration files that would be overwritten are backed up under
 `~/.local/share/bnsplit-backup/<timestamp>/`. These file backups do not undo
-package transactions, COPR enablement, or systemd service/default-target changes.
+package transactions, COPR/RPM Fusion configuration, or systemd
+service/default-target changes.
 
 The installer maps Fedora package names, downloads Material Symbols Sharp from
 Google's upstream repository when missing, rewrites the original home path, and
@@ -155,11 +169,11 @@ models are not in `/usr/share/upscayl/models`.
 
 The default browser is Firefox. Review monitor, keyboard, hardware, and personal
 application settings in `files/home/.config/niri/` before installation. Fedora's
-`ffmpeg-free` is used; additional codecs may require separately configured
-repositories. Bundled `bnclip`/`bnchroma` binaries may need rebuilding if their
-glibc requirements differ from your Fedora release. Full desktop login,
-screen-lock authentication, and optional integrations still need a real-session
-smoke test on the target machine.
+`ffmpeg-free` is used; RPM Fusion is enabled, but additional codecs or package
+swaps must be selected separately. Bundled `bnclip`/`bnchroma` binaries may need
+rebuilding if their glibc requirements differ from your Fedora release. Full
+desktop login, screen-lock authentication, and optional integrations still need a
+real-session smoke test on the target machine.
 
 ### Keybinds
 
@@ -236,8 +250,8 @@ python3 tests/test-niri-settings.py
 python3 tests/test-niri-capture.py
 ```
 
-The installer tests mock privileged operations, package transactions, COPR
-enablement, and deployment. Other tests use mocked IPC and offline niri
+The installer tests mock privileged operations, package transactions, COPR and
+RPM Fusion setup, and deployment. Other tests use mocked IPC and offline niri
 validation; they do not replace a real-session test of login, lock, portals,
 recording, or suspend/resume. Full QML linting has not been performed.
 

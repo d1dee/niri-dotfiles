@@ -73,6 +73,10 @@ run_setup() (
   if [[ $test_scenario == missing-copr-plugin || $test_scenario == broken-copr-plugin ]]; then
     test_copr_plugin_installed=0
   fi
+  if [[ $test_scenario == rpmfusion-installed || $test_scenario == rpmfusion-free-installed ]]; then
+    : > "$case_dir/rpmfusion-free"
+  fi
+  if [[ $test_scenario == rpmfusion-installed ]]; then : > "$case_dir/rpmfusion-nonfree"; fi
   shift
   deny() { printf 'UNSAFE MOCK CALL: %s\n' "$*" >&2; exit 97; }
   log() { printf '%q ' "$@" >> "$actions"; printf '\n' >> "$actions"; }
@@ -98,13 +102,25 @@ run_setup() (
       [[ $test_copr_plugin_installed == 1 ]]
       return
     fi
-    [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww && -f $case_dir/refreshed ]] || deny 'package query before COPR setup and metadata refresh'
+    [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww && -f $case_dir/rpmfusion-enabled && -f $case_dir/refreshed ]] || deny 'package query before repository setup and metadata refresh'
     [[ $# -gt 5 && $1 == -q && $2 == repoquery && $3 == --available && $4 == --queryformat && $5 == '%{name}\n' ]] || deny "dnf5 $*"
     shift 5
     local pkg
     for pkg; do [[ $pkg == "$test_scenario" ]] || printf '%s\n' "$pkg"; done
   }
-  rpm() { [[ $# == 2 && $1 == -q ]] || deny "rpm $*"; return 1; }
+  rpm() {
+    [[ $# == 2 ]] || deny "rpm $*"
+    if [[ $1 == -E && $2 == '%fedora' ]]; then
+      if [[ $test_scenario == invalid-fedora-release ]]; then printf '%%fedora\n'; else printf '44\n'; fi
+      return 0
+    fi
+    [[ $1 == -q ]] || deny "rpm $*"
+    case $2 in
+      rpmfusion-free-release) [[ -f $case_dir/rpmfusion-free ]];;
+      rpmfusion-nonfree-release) [[ -f $case_dir/rpmfusion-nonfree ]];;
+      *) return 1;;
+    esac
+  }
   getent() { [[ $* == 'passwd greetd' ]] || deny "getent $*"; log getent "$@"; printf 'greetd:x:999:999::/var/lib/greetd:/sbin/nologin\n'; }
   fc-match() { [[ $* == '-f %{family} Material Symbols Sharp' ]] || deny "fc-match $*"; printf 'Material Symbols Sharp'; }
   ldd() { [[ $# == 1 ]] || deny "ldd $*"; safe_path "$1"; printf 'all dependencies found\n'; }
@@ -169,8 +185,28 @@ run_setup() (
         esac
         return 0;;
       'dnf5 makecache --refresh')
-        [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww ]] || deny 'metadata refresh before COPR enable'
+        [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww && -f $case_dir/rpmfusion-enabled ]] || deny 'metadata refresh before repository enablement'
         : > "$case_dir/refreshed"
+        return 0;;
+      'dnf5 install -y https://mirrors.rpmfusion.org/'*)
+        [[ $# == 4 || $# == 5 ]] || deny "sudo $*"
+        [[ $test_scenario != rpmfusion-failure ]] || return 1
+        local url
+        for url in "${@:4}"; do
+          case $url in
+            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm)
+              [[ ! -f $case_dir/rpmfusion-free ]] || deny 'reinstalled RPM Fusion Free'
+              : > "$case_dir/rpmfusion-free";;
+            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-44.noarch.rpm)
+              [[ ! -f $case_dir/rpmfusion-nonfree ]] || deny 'reinstalled RPM Fusion Nonfree'
+              : > "$case_dir/rpmfusion-nonfree";;
+            *) deny "RPM Fusion URL: $url";;
+          esac
+        done
+        return 0;;
+      'dnf5 config-manager setopt rpmfusion-free.enabled=1 rpmfusion-free-updates.enabled=1 rpmfusion-nonfree.enabled=1 rpmfusion-nonfree-updates.enabled=1')
+        [[ -f $case_dir/rpmfusion-free && -f $case_dir/rpmfusion-nonfree ]] || deny 'RPM Fusion enabled before release packages'
+        : > "$case_dir/rpmfusion-enabled"
         return 0;;
       'dnf5 install '*)
         [[ $1 == dnf5 && $2 == install && $# -gt 20 ]] || deny "sudo $*"
@@ -245,10 +281,22 @@ contains "$case_dir/output" 'COPR support is unavailable after installing dnf5-p
 [[ ! -e $case_dir/copr-quickshell && ! -d $case_dir/tmp/stage ]] || fail 'unavailable COPR plugin continued to repository setup'
 pass 'unavailable COPR plugin exits before enabling repositories'
 
+fixture rpmfusion-failure new
+run_expect 1 rpmfusion-failure --skip-libretranslate
+contains "$case_dir/output" 'could not install RPM Fusion release packages for Fedora 44'
+[[ ! -e $case_dir/refreshed && ! -d $case_dir/tmp/stage ]] || fail 'failed RPM Fusion setup continued to metadata or staging'
+pass 'RPM Fusion installation failure exits before package checking and deployment'
+
+fixture invalid-fedora-release new
+run_expect 1 invalid-fedora-release --skip-libretranslate
+contains "$case_dir/output" 'cannot determine Fedora release for RPM Fusion'
+[[ ! -e $case_dir/rpmfusion-enabled && ! -d $case_dir/tmp/stage ]] || fail 'invalid Fedora release continued to repository setup'
+pass 'invalid Fedora release cannot generate RPM Fusion download URLs'
+
 fixture missing-package old
 run_expect 1 quickshell --skip-libretranslate
 contains "$case_dir/output" 'required packages unavailable: quickshell'
-equal "$(command wc -l < "$case_dir/actions")" 5
+equal "$(command wc -l < "$case_dir/actions")" 7
 contains "$case_dir/actions" 'sudo -v'
 contains "$case_dir/actions" 'sudo dnf5 makecache --refresh'
 contains "$case_dir/actions" 'sudo dnf5 -y copr enable errornointernet/quickshell'
@@ -282,10 +330,10 @@ for probe in service root-rsync outside-write traversal; do
 done
 pass 'guards reject service mutation, arbitrary privileged rsync and escaping write paths'
 
-for layout in old new missing-copr-plugin; do
+for layout in old new missing-copr-plugin rpmfusion-installed rpmfusion-free-installed; do
   fixture "success-$layout" "$layout"
   scenario=''
-  if [[ $layout == missing-copr-plugin ]]; then scenario=missing-copr-plugin; fi
+  case $layout in missing-copr-plugin|rpmfusion-installed|rpmfusion-free-installed) scenario=$layout;; esac
   run_expect 0 "$scenario" --skip-libretranslate
   if [[ $layout == missing-copr-plugin ]]; then
     contains "$case_dir/actions" 'sudo dnf5 install -y dnf5-plugins'
@@ -294,6 +342,14 @@ for layout in old new missing-copr-plugin; do
   fi
   contains "$case_dir/actions" 'sudo dnf5 -y copr enable errornointernet/quickshell'
   contains "$case_dir/actions" 'sudo dnf5 -y copr enable scottames/awww'
+  contains "$case_dir/actions" 'sudo dnf5 config-manager setopt rpmfusion-free.enabled=1 rpmfusion-free-updates.enabled=1 rpmfusion-nonfree.enabled=1 rpmfusion-nonfree-updates.enabled=1'
+  if [[ $layout == rpmfusion-installed ]]; then
+    if command grep -Fq 'sudo dnf5 install -y https://mirrors.rpmfusion.org/' "$case_dir/actions"; then
+      fail 'installed RPM Fusion release packages were downloaded again'
+    fi
+  else
+    contains "$case_dir/actions" 'https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-44.noarch.rpm'
+  fi
   deployed=$case_dir/root/usr/local/share/bnsplit-greeter
   equal "$(< "$deployed/store/settings.json")" '{}'
   equal "$(< "$deployed/store/data.json")" '{}'
