@@ -1,10 +1,17 @@
 <div align="center">
-    <h1>BnSplit's dotfiles</h1>
+    <h1>Fedora niri dotfiles</h1>
 </div>
 
-https://github.com/user-attachments/assets/f3fd43bb-1a19-442a-9920-9c2a3e5ce66b
+Fedora/niri port of [BnSplit's dotfiles](https://github.com/bnsplits/dotfiles),
+with a Quickshell desktop, greetd login screen, and PAM-authenticated lock screen.
 
-## Screenshots
+## Upstream Preview
+
+The video and screenshots below come from the upstream setup. They illustrate
+the shell's visual style, not a verified capture of this Fedora/niri port; some
+upstream compositor and capture features have been replaced or removed.
+
+https://github.com/user-attachments/assets/f3fd43bb-1a19-442a-9920-9c2a3e5ce66b
 
 <div align="center">
     <img src="assets/screenshot-1.png" alt="" width="49%">
@@ -19,9 +26,10 @@ https://github.com/user-attachments/assets/f3fd43bb-1a19-442a-9920-9c2a3e5ce66b
 ## Notable features
 
 - Quickshell: bar, launcher, control center, notifications, OSD, lock screen, and greeter
-- Launcher pages: apps, files, clipboard (via [bnclip](https://github.com/bnsplits/bnclip)), emojis, calculator, keybinds, monitors, processes, tasks, translate, commands, web search, and wallpaper pickers (local, Wallhaven, Unsplash)
-- Wallpaper-driven theming via [bnchroma](https://github.com/bnsplits/bnchroma) + [awww](https://codeberg.org/LGFae/awww/pulls/571/files)
-- Lean GNOME integration: calendars events via Evolution Data Server, Control Center additional settings, Nautilus's Set as Background...
+- Launcher pages: apps, files, clipboard (via [bnclip](https://github.com/bnsplits/bnclip)), emojis, calculator, monitors, processes, tasks, translate, commands, web search, and wallpaper pickers (local, Wallhaven, Unsplash); shortcuts use niri's native hotkey overlay
+- Wallpaper-driven shell/GTK theming via [bnchroma](https://github.com/bnsplits/bnchroma) + [awww](https://codeberg.org/LGFae/awww)
+- Lean GNOME integration: calendar events via Evolution Data Server, additional Control Center settings, and a wallpaper portal for Set as Background
+- Native niri screenshot selection, OCR, Lens, and portal-based screen sharing/recording
 
 ## Installation
 
@@ -30,25 +38,46 @@ This port targets **niri 26.04 or newer on mutable Fedora with DNF5, x86_64**
 greeter use niri; Hyprland and its portal/idle/lock utilities are not required.
 Package installation, update checks, and package pickers use Fedora/DNF5.
 
-Your enabled repositories must provide `niri`, `quickshell`, and `awww` (including
-`awww-daemon`). If your Fedora release does not include Quickshell, consult its
-[upstream installation instructions](https://quickshell.org/docs/guide/install-setup/)
-for the maintained Fedora COPR. COPR packages are community maintained, not
-supported by Fedora; review repositories before enabling them. `setup` never
-enables third-party repositories automatically. It checks the niri version and
-validates desktop and greeter KDL before deploying configuration.
+`setup` automatically enables these COPR repositories before refreshing metadata
+and checking dependencies:
+
+| COPR | Purpose |
+| --- | --- |
+| [errornointernet/quickshell](https://copr.fedorainfracloud.org/coprs/errornointernet/quickshell/) | Quickshell release packages, as recommended by upstream |
+| [scottames/awww](https://copr.fedorainfracloud.org/coprs/scottames/awww/) | awww wallpaper client and daemon |
+
+If DNF5's COPR command is missing, setup first installs `dnf5-plugins` with `-y`.
+COPR enablement also uses `-y`; the main package installation remains interactive,
+including any signing-key imports it needs. These repositories remain
+enabled for later DNF updates. They are community maintained, not supported by
+Fedora; review them before running setup.
+
+niri and the remaining required desktop packages are resolved from enabled
+repositories, including Fedora's normal repositories. Setup does not enable a
+Hyprland COPR or force packages from another Fedora release. Repository/plugin
+failures stop installation; partial repository changes are not rolled back.
+It checks for niri 26.04+ and validates desktop and greeter KDL before deploying
+configuration. Packages or repository definitions may already have been changed
+when a later validation fails.
 
 Select the packaged **niri** session at login, or use `niri-session` from a TTY.
 The session wrapper sets up systemd/D-Bus activation needed by desktop portals;
 do not replace it with a bare `niri` command for the normal user desktop.
 
 ```sh
-git clone https://github.com/bnsplits/dotfiles.git
-cd dotfiles
+git clone https://github.com/d1dee/niri-dotfiles.git
+cd niri-dotfiles
 ./setup
 ```
 
-Existing files that would be overwritten are backed up first.
+Run setup as your normal user; it requests sudo when needed. Internet access is
+required for repositories, packages, missing fonts, and optional LibreTranslate.
+Use `./setup --help` for usage or `./setup --skip-libretranslate` to omit the
+translation environment.
+
+Existing configuration files that would be overwritten are backed up under
+`~/.local/share/bnsplit-backup/<timestamp>/`. These file backups do not undo
+package transactions, COPR enablement, or systemd service/default-target changes.
 
 The installer maps Fedora package names, downloads Material Symbols Sharp from
 Google's upstream repository when missing, rewrites the original home path, and
@@ -107,8 +136,7 @@ sudo systemctl disable greetd.service
 sudo systemctl set-default multi-user.target
 ```
 
-Alternatively, disable greetd and re-enable your previous display manager. The
-normal file backup does not restore systemd enablement/default-target changes.
+Alternatively, disable greetd and re-enable your previous display manager.
 
 LibreTranslate is installed into a Python virtual environment. If its Python or
 binary dependencies are unavailable on your Fedora release, use
@@ -186,6 +214,32 @@ do not depend on that helper deadline.
 
 Existing installed compositor packages/configurations are not uninstalled or
 deleted automatically. The source deployment and capture list now target niri.
+
+## Repository Layout
+
+- `setup`: Fedora package/repository setup, staged deployment, backups, and greetd enablement
+- `files/home/`: user configuration and scripts, including niri and Quickshell
+- `files/root/`: system files staged for deployment, including greetd, PAM, portal metadata, and bundled utilities/fonts
+- `includes.txt` / `excludes.txt`: paths and filters used by `store`
+- `store`: rebuilds `files/` from the current machine and regenerates the bundled greeter palette; it replaces the existing snapshot, so do not run it just to install
+- `tests/`: sandboxed installer, backend, settings, capture, and authentication-handler regression tests
+
+## Validation
+
+With Bash, rsync, Node.js, Python 3, and niri available:
+
+```sh
+bash -n setup
+bash tests/test-fedora-setup.sh
+node --test tests/*.mjs
+python3 tests/test-niri-settings.py
+python3 tests/test-niri-capture.py
+```
+
+The installer tests mock privileged operations, package transactions, COPR
+enablement, and deployment. Other tests use mocked IPC and offline niri
+validation; they do not replace a real-session test of login, lock, portals,
+recording, or suspend/resume. Full QML linting has not been performed.
 
 ## Software overview
 

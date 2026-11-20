@@ -69,6 +69,10 @@ run_setup() (
   local_root=$case_dir/root
   actions=$case_dir/actions
   test_scenario=${1:-}
+  test_copr_plugin_installed=1
+  if [[ $test_scenario == missing-copr-plugin || $test_scenario == broken-copr-plugin ]]; then
+    test_copr_plugin_installed=0
+  fi
   shift
   deny() { printf 'UNSAFE MOCK CALL: %s\n' "$*" >&2; exit 97; }
   log() { printf '%q ' "$@" >> "$actions"; printf '\n' >> "$actions"; }
@@ -89,6 +93,12 @@ run_setup() (
     printf '%s\n' "$TMPDIR/stage"
   }
   dnf5() {
+    if [[ $* == 'copr --help' ]]; then
+      log dnf5 "$@"
+      [[ $test_copr_plugin_installed == 1 ]]
+      return
+    fi
+    [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww && -f $case_dir/refreshed ]] || deny 'package query before COPR setup and metadata refresh'
     [[ $# -gt 5 && $1 == -q && $2 == repoquery && $3 == --available && $4 == --queryformat && $5 == '%{name}\n' ]] || deny "dnf5 $*"
     shift 5
     local pkg
@@ -145,7 +155,23 @@ run_setup() (
   sudo() {
     log sudo "$@"
     case "$*" in
-      '-v'|'dnf5 makecache --refresh') return 0;;
+      '-v') return 0;;
+      'dnf5 install -y dnf5-plugins')
+        [[ $test_scenario != broken-copr-plugin ]] || return 0
+        test_copr_plugin_installed=1
+        return 0;;
+      'dnf5 -y copr enable errornointernet/quickshell'|'dnf5 -y copr enable scottames/awww')
+        [[ $test_copr_plugin_installed == 1 ]] || deny 'COPR enable without plugin'
+        if [[ $test_scenario == copr-failure && $5 == scottames/awww ]]; then return 1; fi
+        case $5 in
+          errornointernet/quickshell) : > "$case_dir/copr-quickshell";;
+          scottames/awww) : > "$case_dir/copr-awww";;
+        esac
+        return 0;;
+      'dnf5 makecache --refresh')
+        [[ -f $case_dir/copr-quickshell && -f $case_dir/copr-awww ]] || deny 'metadata refresh before COPR enable'
+        : > "$case_dir/refreshed"
+        return 0;;
       'dnf5 install '*)
         [[ $1 == dnf5 && $2 == install && $# -gt 20 ]] || deny "sudo $*"
         local pkg
@@ -206,12 +232,27 @@ for argument in --help -h --invalid 'extra'; do
 done
 pass 'help, unknown option and excess arguments exit before side effects'
 
+fixture copr-failure new
+run_expect 1 copr-failure --skip-libretranslate
+contains "$case_dir/output" 'could not enable COPR scottames/awww'
+[[ ! -e $case_dir/refreshed && ! -d $case_dir/tmp/stage ]] || fail 'failed COPR setup continued to metadata or staging'
+equal "$(< "$case_dir/root/usr/local/bin/bnclip")" previous-root-binary
+pass 'COPR enable failure exits before package checking and deployment'
+
+fixture broken-copr-plugin new
+run_expect 1 broken-copr-plugin --skip-libretranslate
+contains "$case_dir/output" 'COPR support is unavailable after installing dnf5-plugins'
+[[ ! -e $case_dir/copr-quickshell && ! -d $case_dir/tmp/stage ]] || fail 'unavailable COPR plugin continued to repository setup'
+pass 'unavailable COPR plugin exits before enabling repositories'
+
 fixture missing-package old
 run_expect 1 quickshell --skip-libretranslate
 contains "$case_dir/output" 'required packages unavailable: quickshell'
-equal "$(command wc -l < "$case_dir/actions")" 2
+equal "$(command wc -l < "$case_dir/actions")" 5
 contains "$case_dir/actions" 'sudo -v'
 contains "$case_dir/actions" 'sudo dnf5 makecache --refresh'
+contains "$case_dir/actions" 'sudo dnf5 -y copr enable errornointernet/quickshell'
+contains "$case_dir/actions" 'sudo dnf5 -y copr enable scottames/awww'
 [[ ! -d $case_dir/tmp/stage ]] || fail 'missing packages reached staging'
 equal "$(< "$case_dir/root/usr/local/bin/bnclip")" previous-root-binary
 pass 'missing required package exits before transaction, staging or deployment'
@@ -241,9 +282,18 @@ for probe in service root-rsync outside-write traversal; do
 done
 pass 'guards reject service mutation, arbitrary privileged rsync and escaping write paths'
 
-for layout in old new; do
+for layout in old new missing-copr-plugin; do
   fixture "success-$layout" "$layout"
-  run_expect 0 '' --skip-libretranslate
+  scenario=''
+  if [[ $layout == missing-copr-plugin ]]; then scenario=missing-copr-plugin; fi
+  run_expect 0 "$scenario" --skip-libretranslate
+  if [[ $layout == missing-copr-plugin ]]; then
+    contains "$case_dir/actions" 'sudo dnf5 install -y dnf5-plugins'
+  elif command grep -Fq 'sudo dnf5 install -y dnf5-plugins' "$case_dir/actions"; then
+    fail 'available COPR plugin was unnecessarily installed'
+  fi
+  contains "$case_dir/actions" 'sudo dnf5 -y copr enable errornointernet/quickshell'
+  contains "$case_dir/actions" 'sudo dnf5 -y copr enable scottames/awww'
   deployed=$case_dir/root/usr/local/share/bnsplit-greeter
   equal "$(< "$deployed/store/settings.json")" '{}'
   equal "$(< "$deployed/store/data.json")" '{}'

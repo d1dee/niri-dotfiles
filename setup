@@ -10,7 +10,7 @@ fi
 
 case ${1:-} in
   --help|-h)
-    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Installs the greetd greeter and Quickshell lock screen.\n'
+    printf 'Usage: ./setup [--skip-libretranslate]\nFedora (DNF5), x86_64 only. Installs niri, the greetd greeter and Quickshell lock screen.\nAutomatically enables errornointernet/quickshell and scottames/awww COPRs.\n'
     exit 0
     ;;
   ''|--skip-libretranslate) ;;
@@ -32,6 +32,11 @@ step() { printf '\n%s==>%s %s%s%s\n' "$c_blue" "$c_off" "$c_green" "$*" "$c_off"
 info() { printf '    %s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '%swarning:%s %s\n' "$c_yellow" "$c_off" "$*" >&2; }
 err() { printf '%serror:%s %s\n' "$c_red" "$c_off" "$*" >&2; }
+
+copr_repos=(
+  errornointernet/quickshell
+  scottames/awww
+)
 
 dnf_pkgs=(
   niri
@@ -178,10 +183,29 @@ step "Requesting sudo"
 sudo -v
 
 # --- packages ---
+step "Preparing DNF5 COPR support"
+if ! dnf5 copr --help >/dev/null 2>&1; then
+  sudo dnf5 install -y dnf5-plugins
+  if ! dnf5 copr --help >/dev/null 2>&1; then
+    err "DNF5 COPR support is unavailable after installing dnf5-plugins"
+    exit 1
+  fi
+fi
+
+step "Enabling required COPR repositories"
+warn "COPR packages are community maintained and are not supported by Fedora"
+for repo in "${copr_repos[@]}"; do
+  info "enabling $repo for this Fedora release"
+  if ! sudo dnf5 -y copr enable "$repo"; then
+    err "could not enable COPR $repo for Fedora ${VERSION_ID:-}"
+    err "check network access and repository support for this release, then retry"
+    exit 1
+  fi
+done
+
 step "Refreshing Fedora repository metadata"
 sudo dnf5 makecache --refresh
 
-# Never enable a third-party repository implicitly. See README for COPR setup.
 step "Checking required packages"
 available=$(dnf5 -q repoquery --available --queryformat '%{name}\n' "${dnf_pkgs[@]}" "${optional_pkgs[@]}")
 missing=()
@@ -192,7 +216,7 @@ for pkg in "${dnf_pkgs[@]}"; do
 done
 if ((${#missing[@]})); then
   err "required packages unavailable: ${missing[*]}"
-  err "configure the Fedora/COPR repositories described in README.md, then retry"
+  err "check Fedora/COPR package availability for this release; see README.md"
   exit 1
 fi
 for pkg in "${optional_pkgs[@]}"; do
